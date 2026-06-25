@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from engine.catalogue import Catalogue
-from engine.models import TrackPlan, WeeklyPlan
+from engine.output_format import TrackPlan, WeeklyPlan
 
 _DAYS: list[str] = ["monday", "tuesday", "wednesday", "thursday", "friday"]
 _ALLERGEN_LABELS: dict[str, str] = {
