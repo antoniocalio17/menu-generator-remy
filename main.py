@@ -8,7 +8,7 @@ from datetime import date
 
 from engine.catalogue import Catalogue
 from engine.exporter import build_summary, to_markdown
-from engine.planner import PlannerError, generate
+from engine.groq_llama import PlannerError, generate
 from engine.validator import PlanValidationError, fix_budget, validate
 
 
