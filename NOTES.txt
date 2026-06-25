@@ -1,0 +1,265 @@
+================================================================================
+HEYRA — MENU GENERATOR  |  Architecture & Developer Notes
+================================================================================
+
+OVERVIEW
+--------
+Generates a weekly canteen lunch menu for two tracks (meat / vegetarian),
+Monday to Friday, grounded in a real product catalogue (products.csv).
+
+Pipeline:
+  Catalogue → Planner (LLM) → fix_budget → Validator → Exporter
+
+Each step is a separate module under engine/. The pipeline is wired together
+in main.py and will be exposed through a FastAPI app in api/.
+
+
+================================================================================
+MODULE: engine/catalogue.py
+================================================================================
+
+PURPOSE
+  Loads products.csv and provides typed, filtered samples of products
+  to be passed to the LLM as candidate ingredient pools.
+
+DATA TYPES
+  Product (TypedDict)
+    One row from products.csv — product_id, product_name, ingredient_group,
+    cost_per_100g_eur, energy_kcal_per_100g, dietary_class,
+    allergen_gluten, allergen_nuts, allergen_dairy.
+
+  IngredientInput (TypedDict)
+    A (product_id, quantity_g) pair used when computing stats for a dish.
+
+  MealStats (frozen dataclass)
+    Result of compute_meal_stats: cost_eur and calories_kcal for a dish.
+
+  TrackPool = dict[role, list[Product]]
+    One track's candidate pools keyed by role name.
+
+  WeeklyPools = dict[track, TrackPool]
+    Both tracks together: {"meat": TrackPool, "vegetarian": TrackPool}.
+
+ROLE GROUPS
+  All 29 ingredient groups from the CSV are mapped to 5 roles:
+    protein_meat  — meat, poultry, fish, seafood, charcuterie
+    protein_veg   — legumes, eggs, plant proteins, cheeses, nuts
+    carb          — grains, rices, pastas, breads
+    vegetable     — vegetables, mushrooms
+    sauce         — sauces, oils, herbs, spices, condiments, creams,
+                    milks, yogurts, sweeteners, flours, seeds, fruits,
+                    plant-based beverages
+
+  Fruits, sweeteners, seeds etc. are kept in the sauce pool so the LLM
+  can use them when culinarily appropriate (chutneys, nut roasts, etc.)
+  rather than being arbitrarily excluded.
+
+CLASS: Catalogue
+  __init__(csv_path)
+    Reads the CSV, keeps only is_available=1 rows.
+    Builds two DataFrames:
+      _df     — full filtered table, used for sampling/filtering
+      _by_id  — same table indexed by product_id for O(1) lookup
+
+  get_candidates_by_role(role, track, n=15, exclude_ids=None)
+    Returns up to n randomly sampled Products for a given role and track.
+    - Vegetarian track: filters to dietary_class in {vegan, vegetarian}
+    - Meat track + protein_meat role: filters to dietary_class == "meat"
+    - Raises ValueError on unknown role or track name.
+    - exclude_ids: optional set of product_ids to skip (hook for future
+      no-repeat logic — not used in current pipeline).
+
+  build_weekly_pools(n_per_role=15, exclude_ids=None)
+    Calls get_candidates_by_role for all 4 roles of each track and returns
+    a WeeklyPools dict. Called once per generation run — the result is a
+    random snapshot of candidates for the whole week.
+
+  get_product_by_id(product_id)
+    O(1) lookup by product_id. Returns Product or None if not found / not
+    available. product_id is the DataFrame index so it is re-injected into
+    the returned dict manually.
+
+  get_cheaper_in_group(ingredient_group, max_cost, track)
+    Returns all products in the same ingredient_group with
+    cost_per_100g_eur < max_cost, sorted cheapest first.
+    Vegetarian track is filtered to vegan/vegetarian products.
+    Used by fix_budget in validator.py.
+
+  compute_meal_stats(ingredients: list[IngredientInput])
+    Sums cost and calories for a list of (product_id, quantity_g) pairs.
+    Returns a MealStats(cost_eur, calories_kcal).
+    Raises ValueError if any product_id is unknown.
+
+
+================================================================================
+MODULE: engine/models.py
+================================================================================
+
+PURPOSE
+  Defines the JSON schema the LLM must return, validated by Pydantic v2.
+
+MODELS
+  Ingredient       — product_id (int), quantity_g (float, must be > 0)
+  Dish             — dish_name (non-empty str), ingredients (non-empty list)
+  TrackPlan        — one Dish per day: monday … friday
+  WeeklyPlan       — week_start (date), meat (TrackPlan), vegetarian (TrackPlan)
+
+  Track-first structure (not day-first) so the two tracks are independent
+  and the LLM can reason about each track as a coherent unit.
+  quantity_g > 0 is enforced by Pydantic at parse time.
+
+
+================================================================================
+MODULE: engine/history.py
+================================================================================
+
+PURPOSE
+  Persists the pool of product_ids shown to the LLM each week so future
+  runs can detect overly similar pools and resample.
+  NOTE: not wired into the current pipeline — planned for a future iteration.
+
+KEY DESIGN
+  Saves the input pool (what was shown to the LLM), not the output dishes.
+  This way we compare "what options did the LLM see?" week over week,
+  which is a better diversity signal than comparing dish names.
+
+FUNCTIONS
+  load(path)              — reads history.json, returns [] if missing/empty
+  past_pool_ids(n_weeks)  — returns last n weeks as list[set[int]]
+  pool_iou(a, b)          — Jaccard similarity: |a ∩ b| / |a ∪ b|
+  is_pool_fresh(new_ids, past_weeks, max_iou=0.65)
+                          — True if new pool is sufficiently different from
+                            all past weeks (IoU ≤ 0.65 for each)
+  save_week(week_start, pool_ids)
+                          — appends entry to history.json, keeps last 4 weeks
+
+FUTURE USE
+  In build_weekly_pools: after sampling, compute pool_ids = all product_ids
+  in the new pool. Call is_pool_fresh(pool_ids, past_pool_ids()). If False,
+  resample until fresh or a max-attempt limit is reached.
+
+
+================================================================================
+MODULE: engine/planner.py
+================================================================================
+
+PURPOSE
+  Calls the Groq LLM (llama-3.3-70b-versatile via OpenAI-compatible API)
+  with the candidate pools and returns a validated WeeklyPlan.
+
+CONFIGURATION
+  Model:        llama-3.3-70b-versatile
+  Temperature:  0.2  (low — JSON reliability over creativity;
+                variety comes from random pool sampling, not temperature)
+  Response:     JSON mode (ResponseFormatJSONObject)
+  Retries:      3 attempts max
+  API key:      loaded from engine/.env (GROQ_API_KEY)
+
+FUNCTIONS
+  _format_products(products)
+    Formats a list of Products into one line per product:
+      id=X | name | group | cost EUR/100g | kcal/100g | allergens: ...
+
+  _format_track(pool)
+    Formats a full TrackPool as a block of [role] sections,
+    each containing the formatted product list.
+
+  _prompt_messages(pools, week_start, errors)
+    Builds the message list for the LLM:
+      system — role + output format instruction
+      user   — constraints, candidate pools (meat + vegetarian),
+               JSON schema, and any previous validation errors on retry
+
+  generate(week_start, catalogue=None)
+    Main entry point. Builds pools, calls _prompt_messages, posts to Groq,
+    validates response with WeeklyPlan.model_validate_json.
+    On ValidationError (bad JSON schema): appends the error to the prompt
+    and retries up to 3 times.
+    On exhausted retries: raises PlannerError.
+
+RETRY LOGIC
+  Retries only on Pydantic schema errors (LLM returned malformed JSON).
+  Business rule violations (budget, missing meat, wrong dietary class)
+  are handled separately by fix_budget + validate — no LLM retry for those.
+
+
+================================================================================
+MODULE: engine/validator.py
+================================================================================
+
+PURPOSE
+  Two concerns in one module: budget auto-fix and plan validation.
+
+CONSTANT
+  WEEKLY_BUDGET_EUR = 20.10  (per track, per week)
+
+fix_budget(plan, catalogue) -> WeeklyPlan
+  Called before validate(). Adjusts the plan if any track exceeds the budget.
+  Works by:
+    1. Computing total weekly cost per track (_track_cost)
+    2. While cost > budget: find the single most expensive ingredient
+       across all dishes (_find_priciest_ingredient), swap it for the
+       cheapest available product in the same ingredient_group
+       (_get_cheaper_in_group on catalogue), skipping swaps that would
+       produce a dish with the same product_id set as another dish in
+       the week (duplicate prevention).
+    3. Stops when within budget or no cheaper swap exists.
+  Returns a new WeeklyPlan (plan.model_dump + model_validate round-trip).
+
+_find_priciest_ingredient(track, catalogue)
+  Scans all dishes in the track, returns (day, ingredient_index, Product)
+  for the ingredient with the highest cost contribution (cost_per_100g * qty).
+  Returns None if no valid product is found.
+
+validate(plan, catalogue)
+  Collects all constraint violations (does not fail fast) and raises
+  PlanValidationError(errors) if any are found.
+  Checks per track:
+    - weekly cost ≤ WEEKLY_BUDGET_EUR
+  Checks per dish:
+    - all product_ids exist in catalogue
+    - meat track: at least one meat/poultry/fish/seafood/charcuterie ingredient
+    - vegetarian track: no ingredient with dietary_class == "meat"
+
+PlanValidationError
+  Carries a list[str] of all errors found. str(e) joins them with newlines.
+
+
+================================================================================
+PIPELINE (main.py)
+================================================================================
+
+  catalogue = Catalogue()
+  plan      = generate(week_start, catalogue)   # LLM call, up to 3 retries
+  plan      = fix_budget(plan, catalogue)        # silent cost adjustment
+  validate(plan, catalogue)                      # raises if still invalid
+  # → exporter (next step)
+
+
+================================================================================
+NEXT STEPS
+================================================================================
+
+1. engine/exporter.py
+   Build a WeekSummary dataclass from the validated plan:
+     - Per ingredient: name, quantity_g, cost_eur, calories_kcal, allergens
+     - Per dish: name, total cost, total calories, allergens present
+     - Per track: weekly cost, weekly calories, all allergens in the week
+   Then render to two formats:
+     to_markdown(summary) -> str   plain text, one section per track
+     to_html(summary) -> str       calendar grid layout
+
+2. api/main.py  (FastAPI)
+   POST /generate        body: { week_start: "YYYY-MM-DD" }
+                         runs full pipeline, returns WeeklyPlan JSON
+   GET  /export/markdown  returns the markdown export as plain text
+   GET  /export/html      returns the HTML export
+
+3. Frontend (optional)
+   Static calendar grid (HTML + JS) that fetches from the API
+   and renders the week visually.
+
+4. history.py integration (looking-ahead, not in current scope)
+   After a successful generate + validate cycle, call save_week()
+   with all pool product_ids. Before build_weekly_pools, call
+   is_pool_fresh() and resample if IoU > 0.65 against the last 4 weeks.
