@@ -14,8 +14,8 @@ from pydantic import BaseModel
 
 from engine.catalogue import Catalogue
 from engine.exporter import build_summary, summary_to_dict
-from engine.models import WeeklyPlan
-from engine.planner import PlannerError, generate
+from engine.output_format import WeeklyPlan
+from engine.groq_llama import PlannerError, generate
 from engine.validator import PlanValidationError, fix_budget, validate
 
 MENUS_DIR = Path(__file__).parent.parent / "data" / "menus"
