@@ -1,0 +1,392 @@
+/* ── Reset & base ─────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  background: #f4f5f7;
+  color: #1a1a1a;
+  min-height: 100vh;
+}
+
+/* ── Header ───────────────────────────────────────────────────── */
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #fff;
+  border-bottom: 1px solid #e0e0e0;
+  padding: 0.75rem 1.5rem;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.logo {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #1a1a1a;
+  letter-spacing: -0.3px;
+}
+
+.header-center {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.week-label {
+  font-size: 1rem;
+  font-weight: 600;
+  min-width: 130px;
+  text-align: center;
+}
+
+.nav-btn {
+  background: none;
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+  font-size: 1rem;
+  color: #444;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.nav-btn:hover { background: #f0f0f0; }
+
+.generate-btn {
+  background: #1a73e8;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 0.45rem 1.1rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.generate-btn:hover { background: #1557b0; }
+.generate-btn:disabled { background: #9ab8e8; cursor: not-allowed; }
+
+/* ── Global error banner ──────────────────────────────────────── */
+.global-error {
+  background: #fdecea;
+  color: #c0392b;
+  padding: 0.6rem 1.5rem;
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+  display: none;
+}
+.global-error:not(:empty) { display: block; }
+
+/* ── Main / Calendar ──────────────────────────────────────────── */
+main {
+  padding: 1.25rem 1.5rem;
+}
+
+.loading {
+  padding: 3rem;
+  text-align: center;
+  color: #888;
+}
+
+.empty-state {
+  padding: 3rem;
+  text-align: center;
+  color: #888;
+  font-size: 0.95rem;
+}
+
+.calendar {
+  display: grid;
+  grid-template-columns: 110px repeat(5, 1fr);
+  gap: 0.6rem;
+}
+
+/* ── Calendar header (day names) ──────────────────────────────── */
+.header-spacer { /* empty top-left cell */ }
+
+.day-header {
+  text-align: center;
+  font-weight: 700;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #666;
+  padding-bottom: 0.25rem;
+}
+
+/* ── Track label (left column) ────────────────────────────────── */
+.track-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.6rem 0.5rem 0.6rem 0;
+  border-right: 3px solid transparent;
+}
+
+.track-label.track-meat   { border-color: #c0392b; }
+.track-label.track-vegetarian { border-color: #27ae60; }
+
+.track-label strong { font-size: 0.8rem; }
+.track-label small  { font-size: 0.72rem; color: #666; }
+
+.track-allergen-tag {
+  font-size: 0.68rem;
+  color: #c0392b;
+  background: #fdecea;
+  border-radius: 3px;
+  padding: 1px 4px;
+  display: inline-block;
+  margin-top: 2px;
+}
+
+/* ── Dish card ────────────────────────────────────────────────── */
+.dish-card {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 0.75rem;
+  border-top: 3px solid transparent;
+  min-height: 160px;
+}
+
+.dish-card.dish-meat         { border-top-color: #c0392b; }
+.dish-card.dish-vegetarian   { border-top-color: #27ae60; }
+
+/* ── Dish view (read mode) ────────────────────────────────────── */
+.dish-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 0.2rem;
+}
+
+.dish-meta {
+  font-size: 0.75rem;
+  color: #555;
+  margin-bottom: 0.3rem;
+}
+
+.dish-allergens {
+  font-size: 0.72rem;
+  color: #c0392b;
+  margin-bottom: 0.3rem;
+}
+
+.ingredient-list {
+  list-style: none;
+  margin-bottom: 0.6rem;
+}
+
+.ingredient-list li {
+  font-size: 0.75rem;
+  color: #444;
+  padding: 1px 0;
+}
+
+.edit-btn {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.6rem;
+  background: none;
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #555;
+}
+.edit-btn:hover { background: #f0f0f0; }
+
+/* ── Dish edit (edit mode) ────────────────────────────────────── */
+.dish-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.dish-name-input {
+  width: 100%;
+  font-size: 0.9rem;
+  font-weight: 600;
+  border: 1px solid #c0d0e8;
+  border-radius: 4px;
+  padding: 0.3rem 0.5rem;
+}
+
+.ingredient-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.ing-row {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+}
+
+.ing-name {
+  flex: 1;
+  color: #333;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ing-qty {
+  width: 54px;
+  padding: 0.2rem 0.3rem;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  font-size: 0.78rem;
+  text-align: right;
+}
+
+.remove-btn {
+  background: none;
+  border: none;
+  color: #aaa;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0 2px;
+}
+.remove-btn:hover { color: #c0392b; }
+
+.add-ing-btn {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  background: none;
+  border: 1px dashed #bbb;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #555;
+  text-align: left;
+}
+.add-ing-btn:hover { border-color: #1a73e8; color: #1a73e8; }
+
+.edit-errors {
+  font-size: 0.75rem;
+  color: #c0392b;
+  white-space: pre-wrap;
+}
+
+.edit-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.save-btn {
+  background: #1a73e8;
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  padding: 0.3rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.save-btn:hover { background: #1557b0; }
+
+.cancel-btn {
+  background: none;
+  border: 1px solid #d0d0d0;
+  border-radius: 5px;
+  padding: 0.3rem 0.75rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  color: #555;
+}
+.cancel-btn:hover { background: #f0f0f0; }
+
+/* ── Utility ──────────────────────────────────────────────────── */
+.hidden { display: none !important; }
+
+/* ── Modal ────────────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+
+.modal {
+  background: #fff;
+  border-radius: 10px;
+  padding: 1.25rem;
+  width: 340px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 1rem;
+  cursor: pointer;
+  color: #888;
+}
+.modal-close:hover { color: #333; }
+
+.ing-search {
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  font-size: 0.85rem;
+}
+
+#modal-select {
+  width: 100%;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  font-size: 0.82rem;
+  padding: 0.2rem;
+}
+
+.modal-qty-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.modal-qty-row label { font-size: 0.82rem; color: #555; }
+
+#modal-qty {
+  width: 64px;
+  padding: 0.3rem 0.4rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.82rem;
+  text-align: right;
+}
+
+.modal-qty-row span { font-size: 0.82rem; color: #666; }
+
+.confirm-add-btn {
+  margin-left: auto;
+  background: #1a73e8;
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  padding: 0.3rem 0.75rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.confirm-add-btn:hover { background: #1557b0; }

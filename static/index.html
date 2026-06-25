@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Heyra Canteen</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+  <header>
+    <div class="header-left">
+      <span class="logo">Heyra Canteen</span>
+    </div>
+    <div class="header-center">
+      <button class="nav-btn" id="prev-btn" onclick="changeWeek(-1)">&#8592;</button>
+      <span class="week-label" id="week-label">Week —</span>
+      <button class="nav-btn" id="next-btn" onclick="changeWeek(1)">&#8594;</button>
+    </div>
+    <div class="header-right">
+      <button class="generate-btn" id="generate-btn" onclick="generateWeek()">Generate</button>
+    </div>
+  </header>
+
+  <div class="global-error" id="global-error"></div>
+
+  <main>
+    <div class="calendar" id="calendar">
+      <div class="loading">Loading...</div>
+    </div>
+  </main>
+
+  <!-- Add ingredient modal -->
+  <div class="modal-overlay hidden" id="modal-overlay" onclick="closeModal()">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <span>Add Ingredient</span>
+        <button class="modal-close" onclick="closeModal()">&#x2715;</button>
+      </div>
+      <input
+        type="text"
+        class="ing-search"
+        id="modal-search"
+        placeholder="Search by name or group..."
+        oninput="filterModal()"
+        autocomplete="off"
+      >
+      <select id="modal-select" size="7"></select>
+      <div class="modal-qty-row">
+        <label>Quantity</label>
+        <input type="number" id="modal-qty" value="100" min="1" step="10">
+        <span>g</span>
+        <button class="confirm-add-btn" onclick="confirmAdd()">Add to dish</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
