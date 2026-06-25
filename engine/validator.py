@@ -5,7 +5,7 @@ and each track stays within the weekly budget.
 """
 
 from engine.catalogue import ROLE_GROUPS, Catalogue, IngredientInput, Product
-from engine.models import Dish, TrackPlan, WeeklyPlan
+from engine.output_format import Dish, TrackPlan, WeeklyPlan
 
 _MEAT_GROUPS: frozenset[str] = frozenset(ROLE_GROUPS["protein_meat"])
 _DAYS: list[str] = ["monday", "tuesday", "wednesday", "thursday", "friday"]
