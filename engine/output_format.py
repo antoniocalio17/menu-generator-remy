@@ -15,6 +15,7 @@ class Ingredient(BaseModel):
 
 class Dish(BaseModel):
     dish_name: Annotated[str, Field(min_length=1)]
+    description: str = ""
     ingredients: Annotated[list[Ingredient], Field(min_length=1)]
 
 

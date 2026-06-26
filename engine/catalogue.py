@@ -9,6 +9,8 @@ from typing import TypedDict, cast
 
 import pandas as pd
 
+from engine.constants import DISH_ROLES, PROTEIN_ROLE, ROLE_GROUPS, VEGETARIAN_CLASSES
+
 DATA_PATH = Path(__file__).parent.parent / "data" / "products.csv"
 
 
@@ -16,6 +18,7 @@ class Product(TypedDict):
     product_id: int
     product_name: str
     ingredient_group: str
+    cuisine_tag: str
     cost_per_100g_eur: float
     energy_kcal_per_100g: float
     dietary_class: str
@@ -39,32 +42,6 @@ TrackPool = dict[str, list[Product]]
 WeeklyPools = dict[str, TrackPool]
 
 _COLUMNS: list[str] = list(Product.__annotations__)
-_VEGETARIAN_CLASSES: frozenset[str] = frozenset({"vegan", "vegetarian"})
-_PROTEIN_ROLE: dict[str, str] = {"meat": "protein_meat", "vegetarian": "protein_veg"}
-_DISH_ROLES: list[str] = ["carb", "vegetable", "sauce"]
-
-# All 29 ingredient groups assigned to recipe roles.
-ROLE_GROUPS: dict[str, list[str]] = {
-    "protein_meat": ["meat", "poultry", "fish", "seafood", "charcuterie"],
-    "protein_veg": ["legumes", "eggs", "plant proteins", "cheeses", "nuts"],
-    "carb": ["grains", "rices", "pastas", "breads"],
-    "vegetable": ["vegetables", "mushrooms"],
-    "sauce": [
-        "sauces",
-        "condiments",
-        "oils",
-        "herbs",
-        "spices",
-        "creams and butters",
-        "milks",
-        "yogurts",
-        "sweeteners",
-        "flours",
-        "seeds",
-        "fruits",
-        "plant-based beverages",
-    ],
-}
 
 
 class Catalogue:
@@ -82,11 +59,11 @@ class Catalogue:
     ) -> list[Product]:
         if role not in ROLE_GROUPS:
             raise ValueError(f"Unknown role '{role}'. Valid: {sorted(ROLE_GROUPS)}")
-        if track not in _PROTEIN_ROLE:
-            raise ValueError(f"Unknown track '{track}'. Valid: {sorted(_PROTEIN_ROLE)}")
+        if track not in PROTEIN_ROLE:
+            raise ValueError(f"Unknown track '{track}'. Valid: {sorted(PROTEIN_ROLE)}")
         df = self._df[self._df["ingredient_group"].isin(ROLE_GROUPS[role])].copy()
         if track == "vegetarian":
-            df = df[df["dietary_class"].isin(_VEGETARIAN_CLASSES)]
+            df = df[df["dietary_class"].isin(VEGETARIAN_CLASSES)]
         elif role == "protein_meat":
             df = df[df["dietary_class"] == "meat"]
         if exclude_ids:
@@ -101,7 +78,7 @@ class Catalogue:
         exclude_ids: set[int] | None = None,
     ) -> WeeklyPools:
         def _pool(track: str) -> TrackPool:
-            roles = [_PROTEIN_ROLE[track]] + _DISH_ROLES
+            roles = [PROTEIN_ROLE[track]] + DISH_ROLES
             return {
                 role: self.get_candidates_by_role(
                     role, track, n=n_per_role, exclude_ids=exclude_ids
@@ -126,7 +103,7 @@ class Catalogue:
         """
         df = self._df[self._df["ingredient_group"] == ingredient_group].copy()
         if track == "vegetarian":
-            df = df[df["dietary_class"].isin(_VEGETARIAN_CLASSES)]
+            df = df[df["dietary_class"].isin(VEGETARIAN_CLASSES)]
         df = df[df["cost_per_100g_eur"] < max_cost]
         df = df.sort_values("cost_per_100g_eur")
         return cast(list[Product], df[_COLUMNS].to_dict("records"))

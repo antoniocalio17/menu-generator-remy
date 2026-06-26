@@ -19,6 +19,11 @@ def _track(dishes: list[dict]) -> dict:
 
 
 class TestExporter(unittest.TestCase):
+    cat: Catalogue
+    meat_id: int
+    veg_id: int
+    carb_id: int
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.cat = Catalogue()

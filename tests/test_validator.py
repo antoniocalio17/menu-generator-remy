@@ -1,8 +1,9 @@
 import unittest
 
 from engine.catalogue import Catalogue
+from engine.constants import WEEKLY_BUDGET_EUR
 from engine.output_format import WeeklyPlan
-from engine.validator import WEEKLY_BUDGET_EUR, PlanValidationError, fix_budget, validate
+from engine.validator import PlanValidationError, fix_budget, validate
 
 
 def _dish(name: str, product_ids: list[int], quantity_g: float = 150.0) -> dict:
@@ -28,6 +29,13 @@ def _plan(meat_dishes: list[dict], veg_dishes: list[dict]) -> WeeklyPlan:
 
 
 class TestValidator(unittest.TestCase):
+    cat: Catalogue
+    meat_id: int
+    veg_id: int
+    carb_id: int
+    meat_cost: float
+    veg_cost: float
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.cat = Catalogue()

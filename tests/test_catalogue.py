@@ -3,14 +3,15 @@ import unittest
 from parameterized import parameterized
 
 from engine.catalogue import (
-    _DISH_ROLES,
-    _PROTEIN_ROLE,
     Catalogue,
     IngredientInput,
 )
+from engine.constants import DISH_ROLES as _DISH_ROLES, PROTEIN_ROLE as _PROTEIN_ROLE
 
 
 class TestCatalogue(unittest.TestCase):
+    cat: Catalogue
+
     @classmethod
     def setUpClass(cls) -> None:
         cls.cat = Catalogue()

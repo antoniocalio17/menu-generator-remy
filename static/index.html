@@ -9,26 +9,42 @@
 <body>
 
   <header>
-    <div class="header-left">
-      <span class="logo">Heyra Canteen</span>
-    </div>
-    <div class="header-center">
+    <div class="header-title">Heyra Canteen</div>
+    <div class="header-actions">
       <button class="nav-btn" id="prev-btn" onclick="changeWeek(-1)">&#8592;</button>
-      <span class="week-label" id="week-label">Week —</span>
       <button class="nav-btn" id="next-btn" onclick="changeWeek(1)">&#8594;</button>
-    </div>
-    <div class="header-right">
       <button class="generate-btn" id="generate-btn" onclick="generateWeek()">Generate</button>
+      <span class="week-label" id="week-label">Week —</span>
     </div>
   </header>
 
   <div class="global-error" id="global-error"></div>
+  <div class="global-warning" id="global-warning"></div>
 
   <main>
     <div class="calendar" id="calendar">
       <div class="loading">Loading...</div>
     </div>
   </main>
+
+  <!-- Recipe / details modal -->
+  <div class="modal-overlay hidden" id="details-overlay" onclick="closeDetails()">
+    <div class="modal details-modal" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <span id="details-title"></span>
+        <button class="modal-close" onclick="closeDetails()">&#x2715;</button>
+      </div>
+      <div class="details-label">Recipe overview</div>
+      <p class="details-description" id="details-description"></p>
+      <table class="recipe-table">
+        <thead>
+          <tr><th>Ingredient</th><th>Grams</th><th>Allergens</th></tr>
+        </thead>
+        <tbody id="details-tbody"></tbody>
+      </table>
+      <div class="details-footer" id="details-footer"></div>
+    </div>
+  </div>
 
   <!-- Add ingredient modal -->
   <div class="modal-overlay hidden" id="modal-overlay" onclick="closeModal()">

@@ -1,15 +1,16 @@
 import json
 import os
 import unittest
+from typing import cast
 from unittest.mock import MagicMock, patch
 
-from engine.catalogue import Catalogue
-from engine.output_format import WeeklyPlan
+from engine.catalogue import Catalogue, Product
 from engine.groq_llama import PlannerError, _format_products, _prompt_messages, generate
+from engine.output_format import WeeklyPlan
 
 
-def _make_product(**kwargs) -> dict:
-    return {
+def _make_product(**kwargs: object) -> Product:
+    return cast(Product, {
         "product_id": 1,
         "product_name": "Chicken Breast",
         "ingredient_group": "poultry",
@@ -20,10 +21,10 @@ def _make_product(**kwargs) -> dict:
         "allergen_nuts": 0,
         "allergen_dairy": 0,
         **kwargs,
-    }
+    })
 
 
-def _veg(product_id: int, name: str, group: str) -> dict:
+def _veg(product_id: int, name: str, group: str) -> Product:
     return _make_product(
         product_id=product_id,
         product_name=name,
@@ -81,8 +82,13 @@ class TestFormatProducts(unittest.TestCase):
 
 
 class TestBuildMessages(unittest.TestCase):
+    user_content: str
+
     def setUp(self) -> None:
         self.messages = _prompt_messages(_make_pools(), "2024-01-15", [])
+        content = self.messages[1]["content"]
+        assert isinstance(content, str)
+        self.user_content = content
 
     def test_two_messages(self) -> None:
         self.assertEqual(len(self.messages), 2)
@@ -92,21 +98,23 @@ class TestBuildMessages(unittest.TestCase):
         self.assertEqual(self.messages[1]["role"], "user")
 
     def test_user_contains_week_start(self) -> None:
-        self.assertIn("2024-01-15", self.messages[1]["content"])
+        self.assertIn("2024-01-15", self.user_content)
 
     def test_user_contains_product_id(self) -> None:
-        self.assertIn("id=1", self.messages[1]["content"])
+        self.assertIn("id=1", self.user_content)
 
     def test_user_contains_schema(self) -> None:
-        self.assertIn("week_start", self.messages[1]["content"])
+        self.assertIn("week_start", self.user_content)
 
     def test_no_error_section_when_empty(self) -> None:
-        self.assertNotIn("PREVIOUS ERRORS", self.messages[1]["content"])
+        self.assertNotIn("PREVIOUS ERRORS", self.user_content)
 
     def test_errors_appended_on_retry(self) -> None:
         messages = _prompt_messages(_make_pools(), "2024-01-15", ["quantity_g must be > 0"])
-        self.assertIn("PREVIOUS ERRORS", messages[1]["content"])
-        self.assertIn("quantity_g must be > 0", messages[1]["content"])
+        content = messages[1]["content"]
+        assert isinstance(content, str)
+        self.assertIn("PREVIOUS ERRORS", content)
+        self.assertIn("quantity_g must be > 0", content)
 
 
 _FAKE_ENV = {"GROQ_API_KEY": "test-key"}

@@ -6,10 +6,9 @@ Renders to Markdown (text export) or a dict suitable for JSON serialization (API
 from dataclasses import dataclass
 from datetime import date
 
-from engine.catalogue import Catalogue
-from engine.output_format import TrackPlan, WeeklyPlan
-
-_DAYS: list[str] = ["monday", "tuesday", "wednesday", "thursday", "friday"]
+from engine.catalogue import Catalogue, Product
+from engine.constants import DAYS
+from engine.output_format import Dish, TrackPlan, WeeklyPlan
 _ALLERGEN_LABELS: dict[str, str] = {
     "allergen_gluten": "gluten",
     "allergen_nuts": "nuts",
@@ -30,6 +29,7 @@ class IngredientDetail:
 @dataclass(frozen=True)
 class DishDetail:
     dish_name: str
+    description: str
     ingredients: list[IngredientDetail]
     total_cost_eur: float
     total_calories_kcal: float
@@ -51,11 +51,11 @@ class WeekSummary:
     vegetarian: TrackSummary
 
 
-def _allergens_from_product(product: dict) -> list[str]:
+def _allergens_from_product(product: Product) -> list[str]:
     return [label for field, label in _ALLERGEN_LABELS.items() if product.get(field) == 1]
 
 
-def _build_dish_detail(dish, catalogue: Catalogue) -> DishDetail:
+def _build_dish_detail(dish: Dish, catalogue: Catalogue) -> DishDetail:
     ingredient_details: list[IngredientDetail] = []
     for ing in dish.ingredients:
         product = catalogue.get_product_by_id(ing.product_id)
@@ -88,6 +88,7 @@ def _build_dish_detail(dish, catalogue: Catalogue) -> DishDetail:
 
     return DishDetail(
         dish_name=dish.dish_name,
+        description=dish.description,
         ingredients=ingredient_details,
         total_cost_eur=total_cost,
         total_calories_kcal=total_kcal,
@@ -97,7 +98,7 @@ def _build_dish_detail(dish, catalogue: Catalogue) -> DishDetail:
 
 def _build_track_summary(track: TrackPlan, catalogue: Catalogue) -> TrackSummary:
     dishes: dict[str, DishDetail] = {}
-    for day in _DAYS:
+    for day in DAYS:
         dish = getattr(track, day)
         dishes[day] = _build_dish_detail(dish, catalogue)
 
@@ -144,6 +145,7 @@ def summary_to_dict(summary: WeekSummary, week_number: int) -> dict:
     def dish_to_dict(d: DishDetail) -> dict:
         return {
             "dish_name": d.dish_name,
+            "description": d.description,
             "ingredients": [ing_to_dict(i) for i in d.ingredients],
             "total_cost_eur": d.total_cost_eur,
             "total_calories_kcal": d.total_calories_kcal,
@@ -182,13 +184,14 @@ def to_markdown(summary: WeekSummary) -> str:
             lines.append(f"Allergens this week: {', '.join(track.allergens)}")
         lines.append("")
 
-        for day in _DAYS:
+        for day in DAYS:
             dish = track.dishes[day]
             allergen_note = f" | allergens: {', '.join(dish.allergens)}" if dish.allergens else ""
-            lines.append(
-                f"### {day.capitalize()} — {dish.dish_name}"
-                f"  ({dish.total_cost_eur:.2f} EUR | {dish.total_calories_kcal:.0f} kcal{allergen_note})"
+            meta = (
+                f"  ({dish.total_cost_eur:.2f} EUR"
+                f" | {dish.total_calories_kcal:.0f} kcal{allergen_note})"
             )
+            lines.append(f"### {day.capitalize()} — {dish.dish_name}{meta}")
             for ing in dish.ingredients:
                 allergen_note_ing = f" [{', '.join(ing.allergens)}]" if ing.allergens else ""
                 lines.append(

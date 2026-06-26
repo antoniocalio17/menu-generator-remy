@@ -1,22 +1,19 @@
-// ── State ────────────────────────────────────────────────────────────────────
-
+// State
+let currentYear = new Date().getFullYear();
 let currentWeek = getISOWeek(new Date());
-const currentYear = new Date().getFullYear();
-let menuData = null;      // WeekSummary dict from API
-let catalogue = [];       // all products from /api/catalogue
+let menuData = null;
+let catalogue = [];
 
-// Context for the "Add ingredient" modal
 let modalContext = { track: null, day: null };
 
-// ── Init ─────────────────────────────────────────────────────────────────────
-
+// Init
 document.addEventListener('DOMContentLoaded', async () => {
   await loadCatalogue();
   populateModalSelect();
-  await loadWeek(currentWeek);
+  await loadWeek(currentWeek, currentYear);
 });
 
-// ── ISO week helper ───────────────────────────────────────────────────────────
+// ISO week helpers
 
 function getISOWeek(date) {
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
@@ -25,7 +22,27 @@ function getISOWeek(date) {
   return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
 }
 
-// ── API helpers ───────────────────────────────────────────────────────────────
+function getWeeksInYear(year) {
+  // Dec 28 is always in the last ISO week of the year
+  return getISOWeek(new Date(year, 11, 28));
+}
+
+function isoWeekMonday(year, week) {
+  // Jan 4 is always in ISO week 1
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const dayOfWeek = jan4.getUTCDay() || 7; // 1=Mon … 7=Sun
+  return new Date(Date.UTC(year, 0, 4 - (dayOfWeek - 1) + (week - 1) * 7));
+}
+
+function formatDateRange(year, week) {
+  const mon = isoWeekMonday(year, week);
+  const fri = new Date(mon);
+  fri.setUTCDate(mon.getUTCDate() + 4);
+  const fmt = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  return `${fmt(mon)} – ${fmt(fri)}`;
+}
+
+// API helpers
 
 async function loadCatalogue() {
   const res = await fetch('/api/catalogue');
@@ -33,11 +50,12 @@ async function loadCatalogue() {
   catalogue = data.products;
 }
 
-async function loadWeek(week) {
-  updateHeader(week);
+async function loadWeek(week, year) {
+  updateHeader(week, year);
   clearGlobalError();
+  clearGlobalWarning();
 
-  const res = await fetch(`/api/menu/${week}`);
+  const res = await fetch(`/api/menu/${year}/${week}`);
 
   if (res.status === 404) {
     menuData = null;
@@ -53,14 +71,14 @@ async function loadWeek(week) {
   renderCalendar(menuData);
 }
 
-// Called by the Generate button in the header
 async function generateWeek() {
   const btn = document.getElementById('generate-btn');
   btn.disabled = true;
-  btn.textContent = 'Generating…';
+  btn.textContent = 'Generating...';
   clearGlobalError();
+  clearGlobalWarning();
 
-  const res = await fetch(`/api/generate/${currentWeek}`, { method: 'POST' });
+  const res = await fetch(`/api/generate/${currentYear}/${currentWeek}`, { method: 'POST' });
 
   btn.disabled = false;
   btn.textContent = `Generate Week ${currentWeek}`;
@@ -73,10 +91,12 @@ async function generateWeek() {
   }
 
   menuData = await res.json();
+  if (menuData.fallback) {
+    showGlobalWarning('LLM unavailable — menu built from past weeks. You can edit dishes manually or try generating again later.');
+  }
   renderCalendar(menuData);
 }
 
-// Called by Save inside a dish card
 async function saveDish(track, day) {
   const card = document.getElementById(`card-${track}-${day}`);
   const nameInput = card.querySelector('.dish-name-input');
@@ -90,7 +110,7 @@ async function saveDish(track, day) {
     quantity_g: parseFloat(row.querySelector('.ing-qty').value) || 1,
   }));
 
-  const res = await fetch(`/api/menu/${currentWeek}/${track}/${day}`, {
+  const res = await fetch(`/api/menu/${currentYear}/${currentWeek}/${track}/${day}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -113,17 +133,25 @@ async function saveDish(track, day) {
   renderCalendar(menuData);
 }
 
-// ── Navigation ────────────────────────────────────────────────────────────────
+// Navigation
 
 function changeWeek(delta) {
-  currentWeek = Math.max(1, Math.min(53, currentWeek + delta));
-  loadWeek(currentWeek);
+  currentWeek += delta;
+  if (currentWeek < 1) {
+    currentYear--;
+    currentWeek = getWeeksInYear(currentYear);
+  } else if (currentWeek > getWeeksInYear(currentYear)) {
+    currentYear++;
+    currentWeek = 1;
+  }
+  loadWeek(currentWeek, currentYear);
 }
 
-// ── Header helpers ────────────────────────────────────────────────────────────
+// Header helpers
 
-function updateHeader(week) {
-  document.getElementById('week-label').textContent = `Week ${week}, ${currentYear}`;
+function updateHeader(week, year) {
+  const range = formatDateRange(year, week);
+  document.getElementById('week-label').textContent = `Week ${week}, ${year} · ${range}`;
   document.getElementById('generate-btn').textContent = `Generate Week ${week}`;
 }
 
@@ -135,7 +163,15 @@ function showGlobalError(msg) {
   document.getElementById('global-error').textContent = msg;
 }
 
-// ── Rendering ─────────────────────────────────────────────────────────────────
+function clearGlobalWarning() {
+  document.getElementById('global-warning').textContent = '';
+}
+
+function showGlobalWarning(msg) {
+  document.getElementById('global-warning').textContent = msg;
+}
+
+// Rendering
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
 const DAY_LABELS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
@@ -149,72 +185,69 @@ function renderCalendar(data) {
   const cal = document.getElementById('calendar');
   cal.innerHTML = '';
 
-  // Top-left spacer + day column headers
   cal.appendChild(el('div', 'header-spacer'));
-  DAY_LABELS.forEach(label => cal.appendChild(el('div', 'day-header', label)));
+  DAYS.forEach((day, i) => {
+    const mon = isoWeekMonday(currentYear, currentWeek);
+    const d = new Date(mon);
+    d.setUTCDate(mon.getUTCDate() + i);
+    const label = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+    cal.appendChild(el('div', 'day-header', label));
+  });
 
-  // One row per track
-  renderTrackRow(cal, data, 'meat', 'Meat Track');
-  renderTrackRow(cal, data, 'vegetarian', 'Vegetarian Track');
+  renderTrackRow(cal, data, 'meat', 'Meat');
+  renderTrackRow(cal, data, 'vegetarian', 'Vegetarian');
 }
 
 function renderTrackRow(container, data, track, label) {
   const trackData = data[track];
 
-  // Track label cell (first column)
   const labelCell = el('div', `track-label track-${track}`);
-  const strong = el('strong', '', label);
-  const costSmall = el('small', '', `${trackData.weekly_cost_eur.toFixed(2)} EUR / wk`);
-  const kcalSmall = el('small', '', `${Math.round(trackData.weekly_calories_kcal)} kcal / wk`);
-  labelCell.appendChild(strong);
-  labelCell.appendChild(costSmall);
-  labelCell.appendChild(kcalSmall);
+  labelCell.appendChild(el('strong', '', label));
+  labelCell.appendChild(el('small', '', `${trackData.weekly_cost_eur.toFixed(2)} EUR / wk`));
+  labelCell.appendChild(el('small', '', `${Math.round(trackData.weekly_calories_kcal)} kcal / wk`));
   if (trackData.allergens.length) {
-    const tag = el('span', 'track-allergen-tag', trackData.allergens.join(', '));
-    labelCell.appendChild(tag);
+    labelCell.appendChild(el('span', 'track-allergen-tag', trackData.allergens.join(', ')));
   }
   container.appendChild(labelCell);
 
-  // Five dish cards
   DAYS.forEach(day => {
     const dish = trackData.dishes[day];
     container.appendChild(buildDishCard(track, day, dish));
   });
 }
 
-// ── Dish card ─────────────────────────────────────────────────────────────────
+// Dish card
 
 function buildDishCard(track, day, dish) {
   const card = el('div', `dish-card dish-${track}`);
   card.id = `card-${track}-${day}`;
 
-  // ── View mode ──
+  // View mode
   const view = el('div', 'dish-view');
 
-  const nameDiv = el('div', 'dish-name', dish.dish_name);
-  const metaDiv = el('div', 'dish-meta',
-    `${dish.total_cost_eur.toFixed(2)} EUR  ·  ${Math.round(dish.total_calories_kcal)} kcal`);
-
-  view.appendChild(nameDiv);
-  view.appendChild(metaDiv);
+  view.appendChild(el('div', 'dish-name', dish.dish_name));
+  view.appendChild(el('div', 'dish-meta',
+    `${dish.total_cost_eur.toFixed(2)} EUR  ·  ${Math.round(dish.total_calories_kcal)} kcal`));
 
   if (dish.allergens.length) {
-    view.appendChild(el('div', 'dish-allergens', `⚠ ${dish.allergens.join(', ')}`));
+    const tags = el('div', 'dish-tags');
+    dish.allergens.forEach(a => tags.appendChild(el('span', 'allergen-pill', a)));
+    view.appendChild(tags);
   }
 
-  const ingList = el('ul', 'ingredient-list');
-  dish.ingredients.forEach(ing => {
-    let text = `${ing.name} — ${Math.round(ing.quantity_g)} g`;
-    if (ing.allergens.length) text += ` [${ing.allergens.join(', ')}]`;
-    ingList.appendChild(el('li', '', text));
-  });
-  view.appendChild(ingList);
+  const viewActions = el('div', 'dish-view-actions');
+
+  const infoBtn = el('button', 'info-btn', 'Recipe');
+  infoBtn.onclick = () => openDetails(dish);
 
   const editBtn = el('button', 'edit-btn', 'Edit');
   editBtn.onclick = () => switchToEdit(card, view, editPane);
-  view.appendChild(editBtn);
 
-  // ── Edit mode ──
+  viewActions.appendChild(infoBtn);
+  viewActions.appendChild(editBtn);
+  view.appendChild(viewActions);
+
+  // Edit mode
   const editPane = el('div', 'dish-edit hidden');
 
   const nameInput = document.createElement('input');
@@ -229,30 +262,26 @@ function buildDishCard(track, day, dish) {
   });
   editPane.appendChild(ingEditor);
 
-  // "Add ingredient" button → opens modal
   const addBtn = el('button', 'add-ing-btn', '+ Add ingredient');
   addBtn.onclick = () => openModal(track, day, ingEditor);
   editPane.appendChild(addBtn);
 
-  // Error display
   editPane.appendChild(el('div', 'edit-errors'));
 
-  // Save / Cancel
-  const actions = el('div', 'edit-actions');
+  const editActions = el('div', 'edit-actions');
 
   const saveBtn = el('button', 'save-btn', 'Save');
   saveBtn.onclick = () => saveDish(track, day);
 
   const cancelBtn = el('button', 'cancel-btn', 'Cancel');
   cancelBtn.onclick = () => {
-    // Re-render card from current data — no API call needed
     const fresh = buildDishCard(track, day, menuData[track].dishes[day]);
     card.replaceWith(fresh);
   };
 
-  actions.appendChild(saveBtn);
-  actions.appendChild(cancelBtn);
-  editPane.appendChild(actions);
+  editActions.appendChild(saveBtn);
+  editActions.appendChild(cancelBtn);
+  editPane.appendChild(editActions);
 
   card.appendChild(view);
   card.appendChild(editPane);
@@ -290,9 +319,49 @@ function buildIngRow(productId, name, quantityG) {
   return row;
 }
 
-// ── Add ingredient modal ──────────────────────────────────────────────────────
+// Recipe / details modal
 
-let activeIngEditor = null;  // the ingEditor div that receives the new row
+function openDetails(dish) {
+  document.getElementById('details-title').textContent = dish.dish_name;
+
+  const descEl = document.getElementById('details-description');
+  descEl.textContent = dish.description || '';
+  descEl.style.display = dish.description ? 'block' : 'none';
+
+  const tbody = document.getElementById('details-tbody');
+  tbody.innerHTML = '';
+  dish.ingredients.forEach(ing => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${ing.name}</td>
+      <td class="num">${Math.round(ing.quantity_g)} g</td>
+      <td class="allergen-cell">${ing.allergens.length ? ing.allergens.join(', ') : '—'}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  const allergenSection = dish.allergens.length
+    ? `<div class="details-allergens">${dish.allergens.map(a => `<span class="allergen-pill">${a}</span>`).join('')}</div>`
+    : '';
+
+  document.getElementById('details-footer').innerHTML =
+    allergenSection +
+    `<div class="details-costs">` +
+    `<span>Total cost</span><strong>${dish.total_cost_eur.toFixed(2)} EUR</strong>` +
+    `<span class="footer-sep">·</span>` +
+    `<span>Calories</span><strong>${Math.round(dish.total_calories_kcal)} kcal</strong>` +
+    `</div>`;
+
+  document.getElementById('details-overlay').classList.remove('hidden');
+}
+
+function closeDetails() {
+  document.getElementById('details-overlay').classList.add('hidden');
+}
+
+// Add ingredient modal
+
+let activeIngEditor = null;
 
 function populateModalSelect() {
   const select = document.getElementById('modal-select');
@@ -343,7 +412,7 @@ function confirmAdd() {
   closeModal();
 }
 
-// ── DOM helper ────────────────────────────────────────────────────────────────
+// DOM helper
 
 function el(tag, className, text) {
   const node = document.createElement(tag);

@@ -4,12 +4,9 @@ Checks that all product_ids exist, meat track has meat, vegetarian track has no 
 and each track stays within the weekly budget.
 """
 
-from engine.catalogue import ROLE_GROUPS, Catalogue, IngredientInput, Product
+from engine.catalogue import Catalogue, IngredientInput, Product
+from engine.constants import DAYS, MEAT_GROUPS, WEEKLY_BUDGET_EUR
 from engine.output_format import Dish, TrackPlan, WeeklyPlan
-
-_MEAT_GROUPS: frozenset[str] = frozenset(ROLE_GROUPS["protein_meat"])
-_DAYS: list[str] = ["monday", "tuesday", "wednesday", "thursday", "friday"]
-WEEKLY_BUDGET_EUR: float = 20.10
 
 
 class PlanValidationError(Exception):
@@ -34,7 +31,7 @@ def fix_budget(plan: WeeklyPlan, catalogue: Catalogue) -> WeeklyPlan:
 
 def _track_cost(track: dict, catalogue: Catalogue) -> float:
     total = 0.0
-    for day in _DAYS:
+    for day in DAYS:
         known = [
             ing
             for ing in track[day]["ingredients"]
@@ -51,7 +48,7 @@ def _find_priciest_ingredient(track: dict, catalogue: Catalogue) -> tuple[str, i
     target_idx = 0
     highest_cost = 0.0
 
-    for day in _DAYS:
+    for day in DAYS:
         for idx, ing in enumerate(track[day]["ingredients"]):
             product = catalogue.get_product_by_id(ing["product_id"])
             if product is None:
@@ -79,9 +76,9 @@ def _fix_track_budget(track: dict, track_name: str, catalogue: Catalogue) -> dic
         target_day, target_idx, target_product = priciest
 
         existing_sets = [
-            frozenset(ing["product_id"] for ing in track[day]["ingredients"]) for day in _DAYS
+            frozenset(ing["product_id"] for ing in track[day]["ingredients"]) for day in DAYS
         ]
-        other_sets = [s for day, s in zip(_DAYS, existing_sets, strict=True) if day != target_day]
+        other_sets = [s for day, s in zip(DAYS, existing_sets, strict=True) if day != target_day]
 
         alternatives = catalogue.get_cheaper_in_group(
             target_product["ingredient_group"],
@@ -120,7 +117,7 @@ def _check_track(
 ) -> None:
     weekly_cost = 0.0
 
-    for day in _DAYS:
+    for day in DAYS:
         dish = getattr(track, day)
         _check_dish(dish, day, track_name, catalogue, errors)
 
@@ -153,7 +150,7 @@ def _check_dish(
             )
             continue
 
-        if product["ingredient_group"] in _MEAT_GROUPS:
+        if product["ingredient_group"] in MEAT_GROUPS:
             has_meat_protein = True
 
         if track_name == "vegetarian" and product["dietary_class"] == "meat":

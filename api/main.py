@@ -4,6 +4,7 @@ Run with: uvicorn api.main:app --reload  (from the menu-generator/ directory)
 """
 
 import json
+import logging
 from datetime import date
 from pathlib import Path
 
@@ -12,28 +13,35 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from api.logging_config import setup_logging
 from engine.catalogue import Catalogue
 from engine.exporter import build_summary, summary_to_dict
-from engine.output_format import WeeklyPlan
+from engine.fallback import FallbackError, build_fallback_plan
 from engine.groq_llama import PlannerError, generate
+from engine.output_format import WeeklyPlan
 from engine.validator import PlanValidationError, fix_budget, validate
 
 MENUS_DIR = Path(__file__).parent.parent / "data" / "menus"
 STATIC_DIR = Path(__file__).parent.parent / "static"
+LOG_DIR = Path(__file__).parent.parent / "data" / "logs"
+
+setup_logging(LOG_DIR)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Heyra Menu Generator")
 catalogue = Catalogue()
+logger.info("Heyra Menu Generator started — catalogue loaded")
 
 
-def _week_start(week: int) -> date:
+def _week_start(year: int, week: int) -> date:
     try:
-        return date.fromisocalendar(date.today().year, week, 1)
-    except ValueError:
-        raise HTTPException(400, f"Invalid week number: {week}")
+        return date.fromisocalendar(year, week, 1)
+    except ValueError as e:
+        raise HTTPException(400, f"Invalid week {week} for year {year}") from e
 
 
-def _menu_path(week: int) -> Path:
-    return MENUS_DIR / f"{date.today().year}_w{week:02d}.json"
+def _menu_path(year: int, week: int) -> Path:
+    return MENUS_DIR / f"{year}_w{week:02d}.json"
 
 
 # ---------------------------------------------------------------------------
@@ -41,32 +49,51 @@ def _menu_path(week: int) -> Path:
 # ---------------------------------------------------------------------------
 
 
-@app.post("/api/generate/{week}")
-def generate_week(week: int) -> dict:
-    """Run the full pipeline for the given ISO week number and store the result."""
+@app.post("/api/generate/{year}/{week}")
+def generate_week(year: int, week: int) -> dict:
+    """Run the full pipeline for the given ISO year + week and store the result."""
     MENUS_DIR.mkdir(parents=True, exist_ok=True)
-    week_start = _week_start(week)
+    week_start = _week_start(year, week)
 
+    logger.info("Generate request — year=%d week=%d", year, week)
+    fallback_used = False
     try:
         plan = generate(week_start.isoformat(), catalogue=catalogue)
-    except PlannerError as e:
-        raise HTTPException(500, str(e))
+        logger.info("LLM plan ready — year=%d week=%d", year, week)
+    except PlannerError as planner_err:
+        logger.warning("LLM failed (%s) — attempting fallback", planner_err)
+        try:
+            plan = build_fallback_plan(
+                week_start.isoformat(),
+                menus_dir=MENUS_DIR,
+                exclude_path=_menu_path(year, week),
+            )
+            fallback_used = True
+            logger.warning("Fallback plan built for year=%d week=%d", year, week)
+        except FallbackError as fb_err:
+            logger.error("Fallback failed: %s", fb_err)
+            raise HTTPException(503, str(fb_err)) from fb_err
 
     plan = fix_budget(plan, catalogue)
 
     try:
         validate(plan, catalogue)
     except PlanValidationError as e:
-        raise HTTPException(422, {"errors": e.errors})
+        logger.warning("Validation failed for year=%d week=%d: %s", year, week, e.errors)
+        raise HTTPException(422, {"errors": e.errors}) from e
 
-    _menu_path(week).write_text(plan.model_dump_json())
-    return summary_to_dict(build_summary(plan, catalogue), week)
+    _menu_path(year, week).write_text(plan.model_dump_json())
+    logger.info("Menu saved — year=%d week=%d fallback=%s", year, week, fallback_used)
+    result = summary_to_dict(build_summary(plan, catalogue), week)
+    if fallback_used:
+        result["fallback"] = True
+    return result
 
 
-@app.get("/api/menu/{week}")
-def get_week(week: int) -> dict:
-    """Return the stored menu for a week (404 if not yet generated)."""
-    path = _menu_path(week)
+@app.get("/api/menu/{year}/{week}")
+def get_week(year: int, week: int) -> dict:
+    """Return the stored menu for a year+week (404 if not yet generated)."""
+    path = _menu_path(year, week)
     if not path.exists():
         raise HTTPException(404, "Menu not generated yet for this week")
     plan = WeeklyPlan.model_validate_json(path.read_text())
@@ -88,10 +115,10 @@ class DishUpdate(BaseModel):
     ingredients: list[IngredientPayload]
 
 
-@app.put("/api/menu/{week}/{track}/{day}")
-def update_dish(week: int, track: str, day: str, body: DishUpdate) -> dict:
+@app.put("/api/menu/{year}/{week}/{track}/{day}")
+def update_dish(year: int, week: int, track: str, day: str, body: DishUpdate) -> dict:
     """Chef edits a single dish. Validates constraints before saving."""
-    path = _menu_path(week)
+    path = _menu_path(year, week)
     if not path.exists():
         raise HTTPException(404, "Menu not generated yet for this week")
 
@@ -112,14 +139,15 @@ def update_dish(week: int, track: str, day: str, body: DishUpdate) -> dict:
     try:
         plan = WeeklyPlan.model_validate(data)
     except Exception as e:
-        raise HTTPException(422, {"errors": [str(e)]})
+        raise HTTPException(422, {"errors": [str(e)]}) from e
 
     try:
         validate(plan, catalogue)
     except PlanValidationError as e:
-        raise HTTPException(422, {"errors": e.errors})
+        raise HTTPException(422, {"errors": e.errors}) from e
 
     path.write_text(plan.model_dump_json())
+    logger.info("Dish updated — year=%d week=%d %s/%s", year, week, track, day)
     return summary_to_dict(build_summary(plan, catalogue), week)
 
 
