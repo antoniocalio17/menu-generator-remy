@@ -7,35 +7,30 @@ candidates from the live catalogue.
 import logging
 import os
 from pathlib import Path
-from typing import Annotated, cast
+from typing import cast
 
 from dotenv import load_dotenv
 from openai import APIError, OpenAI
 from openai.types.chat import ChatCompletionMessageParam
 from openai.types.shared_params import ResponseFormatJSONObject
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import ValidationError
 
 from engine.catalogue import Catalogue, Product
-from engine.constants import RENAME_SCHEMA, RENAME_SYSTEM_PROMPT, SUGGEST_SCHEMA
+from engine.constants import (
+    GROQ_BASE_URL,
+    GROQ_MODEL,
+    RENAME_SCHEMA,
+    RENAME_SYSTEM_PROMPT,
+    SUGGEST_MAX_CANDIDATES,
+    SUGGEST_POOL_SIZE,
+    SUGGEST_SCHEMA,
+    SUGGEST_TEMPERATURE,
+)
+from engine.llm.schemas import RenameResponse, SuggestionResponse
 
-load_dotenv(Path(__file__).parent / ".env")
-
-_GROQ_BASE_URL = "https://api.groq.com/openai/v1"
-_MODEL = "llama-3.3-70b-versatile"
-_TEMPERATURE = 0.3
-_MAX_CANDIDATES = 3
-_POOL_SIZE = 20
+load_dotenv(Path(__file__).parent.parent / ".env")
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Rename / re-describe a dish after an ingredient swap
-# ---------------------------------------------------------------------------
-
-
-class _RenameResponse(BaseModel):
-    dish_name: Annotated[str, Field(min_length=1)]
-    description: Annotated[str, Field(min_length=1)]
 
 
 def rename_dish(
@@ -43,10 +38,7 @@ def rename_dish(
     track: str,
     catalogue: Catalogue,
 ) -> dict:
-    """
-    Return {dish_name, description} for the current ingredient set.
-    Called after the chef swaps an ingredient so the name stays coherent.
-    """
+    """Return {dish_name, description} for the current ingredient set."""
     dish: list[tuple[Product, float]] = []
     for ing in ingredients:
         p = catalogue.get_product_by_id(ing["product_id"])
@@ -63,17 +55,20 @@ def rename_dish(
             f"({qty:.0f}g, cuisine={p['cuisine_tag']})"
         )
 
-    client = OpenAI(api_key=os.environ["GROQ_API_KEY"], base_url=_GROQ_BASE_URL)
+    client = OpenAI(api_key=os.environ["GROQ_API_KEY"], base_url=GROQ_BASE_URL)
     messages: list[ChatCompletionMessageParam] = [
         cast(ChatCompletionMessageParam, {"role": "system", "content": RENAME_SYSTEM_PROMPT}),
-        cast(ChatCompletionMessageParam, {"role": "user", "content": "\n".join(lines) + RENAME_SCHEMA}),
+        cast(
+            ChatCompletionMessageParam,
+            {"role": "user", "content": "\n".join(lines) + RENAME_SCHEMA},
+        ),
     ]
 
     try:
         response = client.chat.completions.create(
-            model=_MODEL,
+            model=GROQ_MODEL,
             messages=messages,
-            temperature=_TEMPERATURE,
+            temperature=SUGGEST_TEMPERATURE,
             response_format=ResponseFormatJSONObject(type="json_object"),
         )
     except APIError as e:
@@ -89,29 +84,12 @@ def rename_dish(
         )
     raw = response.choices[0].message.content or ""
     try:
-        parsed = _RenameResponse.model_validate_json(raw)
+        parsed = RenameResponse.model_validate_json(raw)
     except ValidationError as e:
         logger.warning("rename_dish schema validation failed: %s | raw: %.200s", e, raw)
         raise
 
     return {"dish_name": parsed.dish_name, "description": parsed.description}
-
-
-# ---------------------------------------------------------------------------
-# Substitute suggestions for one ingredient slot
-# ---------------------------------------------------------------------------
-
-
-class _Candidate(BaseModel):
-    product_id: int
-    reason: Annotated[str, Field(min_length=1)]
-
-
-class _SuggestionResponse(BaseModel):
-    candidates: Annotated[
-        list[_Candidate],
-        Field(min_length=1, max_length=_MAX_CANDIDATES),
-    ]
 
 
 def _build_prompt(
@@ -123,7 +101,7 @@ def _build_prompt(
     system = (
         f"You are a culinary advisor for a canteen kitchen (track: {track}).\n"
         "A chef wants to swap one ingredient. Given the full dish and a pool of "
-        f"available substitutes, pick the best {_MAX_CANDIDATES} replacements.\n"
+        f"available substitutes, pick the best {SUGGEST_MAX_CANDIDATES} replacements.\n"
         "Rank by how well each fits the dish's cuisine, coherence, and balance. "
         "Only use product_ids from the provided pool. "
         "One concise reason per candidate (max 12 words). Respond with JSON only."
@@ -162,11 +140,8 @@ def suggest_substitutes(
     catalogue: Catalogue,
 ) -> list[dict]:
     """
-    Return up to _MAX_CANDIDATES substitute products for target_product_id,
+    Return up to SUGGEST_MAX_CANDIDATES substitute products for target_product_id,
     ranked by fit within the full dish context.
-
-    Each item in the returned list:
-        {product_id, product_name, ingredient_group, cost_per_100g_eur, reason}
     """
     dish: list[tuple[Product, float]] = []
     target: Product | None = None
@@ -186,21 +161,21 @@ def suggest_substitutes(
         target["ingredient_group"],
         track,
         exclude_ids={target_product_id},
-        limit=_POOL_SIZE,
+        limit=SUGGEST_POOL_SIZE,
     )
     if not pool:
         return []
 
     valid_ids = {p["product_id"] for p in pool}
 
-    client = OpenAI(api_key=os.environ["GROQ_API_KEY"], base_url=_GROQ_BASE_URL)
+    client = OpenAI(api_key=os.environ["GROQ_API_KEY"], base_url=GROQ_BASE_URL)
     messages = _build_prompt(dish, target, pool, track)
 
     try:
         response = client.chat.completions.create(
-            model=_MODEL,
+            model=GROQ_MODEL,
             messages=messages,
-            temperature=_TEMPERATURE,
+            temperature=SUGGEST_TEMPERATURE,
             response_format=ResponseFormatJSONObject(type="json_object"),
         )
     except APIError as e:
@@ -216,7 +191,7 @@ def suggest_substitutes(
         )
     raw = response.choices[0].message.content or ""
     try:
-        parsed = _SuggestionResponse.model_validate_json(raw)
+        parsed = SuggestionResponse.model_validate_json(raw)
     except ValidationError as e:
         logger.warning("Suggester schema validation failed: %s | raw: %.200s", e, raw)
         raise

@@ -19,7 +19,8 @@ conda activate heyra_menu
 pip install -r requirements.txt
 
 # 3. Add your Groq API key
-echo "GROQ_API_KEY=your_key_here" > engine/.env
+cp engine/.env.example engine/.env
+# then edit engine/.env and set GROQ_API_KEY
 ```
 
 ---
@@ -67,39 +68,43 @@ pytest tests/
 ```
 menu-generator/
 │
-├── engine/                     core business logic, no HTTP
-│   ├── constants.py            all shared values and LLM prompt strings
-│   ├── output_format.py        Pydantic models (Dish, TrackPlan, WeeklyPlan)
-│   ├── catalogue.py            loads products.csv, typed product queries
-│   ├── composer.py             builds dish skeletons by weighted sampling
-│   ├── groq_llama.py           calls the LLM to name dishes, handles retries
-│   ├── fallback.py             builds a plan from past saved menus if LLM fails
-│   ├── validator.py            checks dietary rules and product existence
-│   ├── exporter.py             enriches a plan with costs, kcal, allergens
-│   └── suggester.py            AI ingredient substitution and dish renaming
+├── engine/                         core business logic, no HTTP
+│   ├── constants.py                all shared values, LLM config, and prompt strings
+│   ├── output_format.py            Pydantic models shared across the engine (Dish, WeeklyPlan)
+│   ├── catalogue.py                loads products.csv, typed product queries
+│   ├── composer.py                 builds dish skeletons by cuisine-weighted sampling
+│   ├── fallback.py                 builds a plan from past saved menus if LLM fails
+│   ├── validator.py                checks dietary rules and product existence
+│   ├── exporter.py                 enriches a plan with costs, kcal, allergens
+│   └── llm/                        everything that talks to the Groq API
+│       ├── schemas.py              Pydantic models for LLM request/response parsing
+│       ├── groq_llama.py           dish naming, coherence validation, retry logic
+│       └── suggester.py            ingredient substitution suggestions and dish renaming
 │
 ├── api/
-│   ├── main.py                 FastAPI app — routes, orchestration, error handling
-│   └── logging_config.py       rotating file logger (1 MB × 5), silences third-party noise
+│   ├── schemas.py                  Pydantic request/response models for the HTTP layer
+│   ├── deps.py                     shared state: catalogue instance, paths, helpers
+│   ├── main.py                     FastAPI route handlers (no class definitions)
+│   └── logging_config.py           rotating file logger (1 MB × 5), silences third-party noise
 │
-├── web_app/                    plain HTML/CSS/JS chef UI, no framework, no build step
+├── web_app/                        plain HTML/CSS/JS chef UI, no framework, no build step
 │   ├── index.html
 │   ├── style.css
 │   └── app.js
 │
 ├── tests/
-│   ├── test_catalogue.py       product filtering, dietary constraints, exclusions
-│   ├── test_composer.py        dish uniqueness, cuisine rotation, budget fit
-│   ├── test_exporter.py        cost/kcal totals, allergens, JSON and Markdown output
-│   └── test_validator.py       dietary violations, unknown product IDs
+│   ├── test_catalogue.py           product filtering, dietary constraints, exclusions
+│   ├── test_composer.py            dish uniqueness, cuisine rotation, budget fit
+│   ├── test_exporter.py            cost/kcal totals, allergens, JSON and Markdown output
+│   └── test_validator.py           dietary violations, unknown product IDs
 │
 ├── data/
-│   ├── products.csv            3137 products, 2959 available, 29 ingredient groups
-│   └── menus/                  generated weekly plans saved as YYYY_wWW.json
+│   ├── products.csv                3137 products, 2959 available, 29 ingredient groups
+│   └── menus/                      generated weekly plans saved as YYYY_wWW.json
 │
-├── local_main.py               CLI entry point (dev use)
+├── local_main.py                   CLI entry point (dev use)
 ├── requirements.txt
-└── pyproject.toml              ruff + mypy + pytest config
+└── pyproject.toml                  ruff + mypy + pytest config
 ```
 
 ---
@@ -118,13 +123,13 @@ products.csv
                   scales protein quantity if daily budget is exceeded
      │
      ▼
- groq_llama       sends 10 composed dishes to the LLM
+ llm/groq_llama   sends 10 composed dishes to the LLM
                   LLM returns names, descriptions, validity flags
                   re-composes and retries on bad output (up to 3 attempts)
                   falls back to fallback.py if LLM is unavailable
      │
      ▼
- validator        checks product IDs, meat/veg dietary rules
+ validator        checks product IDs and meat/veg dietary rules
      │
      ▼
  exporter         computes per-dish cost, kcal, allergens → JSON or Markdown
@@ -139,4 +144,4 @@ products.csv
 
 | Variable | Required | Description |
 |---|---|---|
-| `GROQ_API_KEY` | Yes | Groq API key — place in `engine/.env` |
+| `GROQ_API_KEY` | Yes | Groq API key — place in `engine/.env` (see `engine/.env.example`) |

@@ -3,6 +3,16 @@ Shared constants used across engine modules.
 Import from here — do not redefine in individual modules.
 """
 
+# Groq configuration
+GROQ_BASE_URL: str = "https://api.groq.com/openai/v1"
+GROQ_MODEL: str = "llama-3.3-70b-versatile"
+NAMING_TEMPERATURE: float = 0.4
+NAMING_MAX_RETRIES: int = 3
+NAMING_RATE_LIMIT_BACKOFF: list[float] = [2.0, 5.0, 10.0]
+SUGGEST_TEMPERATURE: float = 0.3
+SUGGEST_MAX_CANDIDATES: int = 3
+SUGGEST_POOL_SIZE: int = 20
+
 # LLM prompts
 NAMING_SYSTEM_PROMPT = (
     "You are a creative professional chef reviewing pre-composed canteen dishes.\n"

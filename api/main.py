@@ -5,65 +5,47 @@ Run with: uvicorn api.main:app --reload  (from the menu-generator/ directory)
 
 import json
 import logging
-from datetime import date
-from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
 
+from api.deps import LOG_DIR, MENUS_DIR, STATIC_DIR, catalogue, menu_path, week_start
 from api.logging_config import setup_logging
-from engine.catalogue import Catalogue
+from api.schemas import DishUpdate, RenameRequest, SuggestRequest
 from engine.exporter import build_summary, summary_to_dict
 from engine.fallback import FallbackError, build_fallback_plan
-from engine.groq_llama import PlannerError, generate
+from engine.llm.groq_llama import generate
+from engine.llm.schemas import PlannerError
+from engine.llm.suggester import rename_dish, suggest_substitutes
 from engine.output_format import WeeklyPlan
-from engine.suggester import rename_dish, suggest_substitutes
 from engine.validator import PlanValidationError, validate
-
-MENUS_DIR = Path(__file__).parent.parent / "data" / "menus"
-STATIC_DIR = Path(__file__).parent.parent / "web_app"
-LOG_DIR = Path(__file__).parent.parent / "data" / "logs"
 
 setup_logging(LOG_DIR)
 logger = logging.getLogger(__name__)
+logger.info("Heyra Menu Generator started")
 
 app = FastAPI(title="Heyra Menu Generator")
-catalogue = Catalogue()
-logger.info("Heyra Menu Generator started — catalogue loaded")
 
 
-def _week_start(year: int, week: int) -> date:
-    try:
-        return date.fromisocalendar(year, week, 1)
-    except ValueError as e:
-        raise HTTPException(400, f"Invalid week {week} for year {year}") from e
-
-
-def _menu_path(year: int, week: int) -> Path:
-    return MENUS_DIR / f"{year}_w{week:02d}.json"
-
-
-# Generation and Retrieval
 @app.post("/api/generate/{year}/{week}")
 def generate_week(year: int, week: int) -> dict:
     """Run the full pipeline for the given ISO year + week and store the result."""
     MENUS_DIR.mkdir(parents=True, exist_ok=True)
-    week_start = _week_start(year, week)
+    ws = week_start(year, week)
 
     logger.info("Generate request — year=%d week=%d", year, week)
     fallback_used = False
     try:
-        plan = generate(week_start.isoformat(), catalogue=catalogue)
+        plan = generate(ws.isoformat(), catalogue=catalogue)
         logger.info("LLM plan ready — year=%d week=%d", year, week)
     except PlannerError as planner_err:
         logger.warning("LLM failed (%s) — attempting fallback", planner_err)
         try:
             plan = build_fallback_plan(
-                week_start.isoformat(),
+                ws.isoformat(),
                 menus_dir=MENUS_DIR,
-                exclude_path=_menu_path(year, week),
+                exclude_path=menu_path(year, week),
             )
             fallback_used = True
             logger.warning("Fallback plan built for year=%d week=%d", year, week)
@@ -77,7 +59,7 @@ def generate_week(year: int, week: int) -> dict:
         logger.warning("Validation failed for year=%d week=%d: %s", year, week, e.errors)
         raise HTTPException(422, {"errors": e.errors}) from e
 
-    _menu_path(year, week).write_text(plan.model_dump_json())
+    menu_path(year, week).write_text(plan.model_dump_json())
     logger.info("Menu saved — year=%d week=%d fallback=%s", year, week, fallback_used)
     result = summary_to_dict(build_summary(plan, catalogue), week)
     if fallback_used:
@@ -88,39 +70,22 @@ def generate_week(year: int, week: int) -> dict:
 @app.get("/api/menu/{year}/{week}")
 def get_week(year: int, week: int) -> dict:
     """Return the stored menu for a year+week (404 if not yet generated)."""
-    path = _menu_path(year, week)
+    path = menu_path(year, week)
     if not path.exists():
         raise HTTPException(404, "Menu not generated yet for this week")
     plan = WeeklyPlan.model_validate_json(path.read_text())
     return summary_to_dict(build_summary(plan, catalogue), week)
 
 
-# ---------------------------------------------------------------------------
-# Chef customization
-# ---------------------------------------------------------------------------
-
-
-class IngredientPayload(BaseModel):
-    product_id: int
-    quantity_g: float
-
-
-class DishUpdate(BaseModel):
-    dish_name: str
-    description: str = ""
-    ingredients: list[IngredientPayload]
-
-
 @app.put("/api/menu/{year}/{week}/{track}/{day}")
 def update_dish(year: int, week: int, track: str, day: str, body: DishUpdate) -> dict:
     """Chef edits a single dish. Validates constraints before saving."""
-    path = _menu_path(year, week)
+    path = menu_path(year, week)
     if not path.exists():
         raise HTTPException(404, "Menu not generated yet for this week")
-
-    if track not in ("meat", "vegetarian"):
+    if track not in {"meat", "vegetarian"}:
         raise HTTPException(400, f"Unknown track: '{track}'")
-    if day not in ("monday", "tuesday", "wednesday", "thursday", "friday"):
+    if day not in {"monday", "tuesday", "wednesday", "thursday", "friday"}:
         raise HTTPException(400, f"Unknown day: '{day}'")
 
     data = json.loads(path.read_text())
@@ -148,21 +113,10 @@ def update_dish(year: int, week: int, track: str, day: str, body: DishUpdate) ->
     return summary_to_dict(build_summary(plan, catalogue), week)
 
 
-# ---------------------------------------------------------------------------
-# AI ingredient substitution suggestions
-# ---------------------------------------------------------------------------
-
-
-class SuggestRequest(BaseModel):
-    track: str
-    target_product_id: int
-    ingredients: list[IngredientPayload]
-
-
 @app.post("/api/suggest")
 def suggest(body: SuggestRequest) -> dict:
     """Return AI-ranked substitute candidates for one ingredient slot."""
-    if body.track not in ("meat", "vegetarian"):
+    if body.track not in {"meat", "vegetarian"}:
         raise HTTPException(400, f"Unknown track: '{body.track}'")
 
     ingredients = [
@@ -187,15 +141,10 @@ def suggest(body: SuggestRequest) -> dict:
     return {"candidates": candidates}
 
 
-class RenameRequest(BaseModel):
-    track: str
-    ingredients: list[IngredientPayload]
-
-
 @app.post("/api/rename-dish")
 def rename(body: RenameRequest) -> dict:
     """Re-generate dish name and description after an ingredient swap."""
-    if body.track not in ("meat", "vegetarian"):
+    if body.track not in {"meat", "vegetarian"}:
         raise HTTPException(400, f"Unknown track: '{body.track}'")
 
     ingredients = [
@@ -215,19 +164,9 @@ def rename(body: RenameRequest) -> dict:
     return result
 
 
-# ---------------------------------------------------------------------------
-# Catalogue (used by the UI to populate ingredient search)
-# ---------------------------------------------------------------------------
-
-
 @app.get("/api/catalogue")
 def get_catalogue() -> dict:
     return {"products": catalogue.get_all_products()}
-
-
-# ---------------------------------------------------------------------------
-# Static frontend — must be last so API routes take priority
-# ---------------------------------------------------------------------------
 
 
 @app.get("/")

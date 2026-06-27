@@ -134,7 +134,10 @@ def _fit_protein_to_budget(dish: ComposedDish) -> ComposedDish:
         "Protein qty capped %.0fg→%.1fg (%s) to fit daily budget",
         protein_qty, new_qty, protein["product_name"],
     )
-    return ComposedDish(cuisine=dish.cuisine, products=[(protein, new_qty)] + list(dish.products[1:]))
+    return ComposedDish(
+        cuisine=dish.cuisine,
+        products=[(protein, new_qty)] + list(dish.products[1:]),
+    )
 
 
 def compose_single_dish(

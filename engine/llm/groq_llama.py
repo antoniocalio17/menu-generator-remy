@@ -8,43 +8,33 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import Annotated, cast
+from typing import cast
 
 from dotenv import load_dotenv
 from openai import APIError, OpenAI, RateLimitError
 from openai.types.chat import ChatCompletionMessageParam
 from openai.types.shared_params import ResponseFormatJSONObject
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import ValidationError
 
 from engine.catalogue import Catalogue
 from engine.composer import ComposedDish, ComposerError, compose_single_dish, compose_week
-from engine.constants import CUISINE_ROTATION, DAYS, NAMING_OUTPUT_FORMAT, NAMING_SYSTEM_PROMPT
+from engine.constants import (
+    CUISINE_ROTATION,
+    DAYS,
+    GROQ_BASE_URL,
+    GROQ_MODEL,
+    NAMING_MAX_RETRIES,
+    NAMING_OUTPUT_FORMAT,
+    NAMING_RATE_LIMIT_BACKOFF,
+    NAMING_SYSTEM_PROMPT,
+    NAMING_TEMPERATURE,
+)
+from engine.llm.schemas import NamedDish, NamingResponse, PlannerError
 from engine.output_format import WeeklyPlan
 
-load_dotenv(Path(__file__).parent / ".env")
-
-_GROQ_BASE_URL = "https://api.groq.com/openai/v1"
-_MODEL = "llama-3.3-70b-versatile"
-_TEMPERATURE = 0.4
-_MAX_RETRIES = 3
-_RATE_LIMIT_BACKOFF: list[float] = [2.0, 5.0, 10.0]
+load_dotenv(Path(__file__).parent.parent / ".env")
 
 logger = logging.getLogger(__name__)
-
-class PlannerError(Exception):
-    pass
-
-class NamedDish(BaseModel):
-    dish_name: Annotated[str, Field(min_length=1)]
-    description: str
-    ingredients: list[int]
-    valid: bool
-    reason: str = ""
-
-
-class NamingResponse(BaseModel):
-    meat: Annotated[list[NamedDish], Field(min_length=5, max_length=5)]
-    vegetarian: Annotated[list[NamedDish], Field(min_length=5, max_length=5)]
 
 
 def _format_dish(dish: ComposedDish, idx: int) -> str:
@@ -88,7 +78,6 @@ def _validate_ids(
     veg_dishes: list[ComposedDish],
     catalogue: Catalogue,
 ) -> list[str]:
-    """Validate the ingredient in the llm response."""
     errors: list[str] = []
     for track_name, named_list, composed_list in (
         ("meat", naming.meat, meat_dishes),
@@ -107,6 +96,7 @@ def _validate_ids(
                         "composed set — use only the IDs provided"
                     )
     return errors
+
 
 def _assemble_plan(
     week_start: str,
@@ -138,11 +128,12 @@ def _assemble_plan(
         "vegetarian": build_track(veg_dishes, naming.vegetarian, "vegetarian"),
     })
 
+
 def generate(week_start: str, catalogue: Catalogue | None = None) -> WeeklyPlan:
     if catalogue is None:
         catalogue = Catalogue()
 
-    client = OpenAI(api_key=os.environ["GROQ_API_KEY"], base_url=_GROQ_BASE_URL)
+    client = OpenAI(api_key=os.environ["GROQ_API_KEY"], base_url=GROQ_BASE_URL)
 
     logger.info("Composing dishes for week_start=%s", week_start)
     meat_dishes = compose_week("meat", catalogue)
@@ -156,21 +147,21 @@ def generate(week_start: str, catalogue: Catalogue | None = None) -> WeeklyPlan:
     last_raw = ""
     rl_attempt = 0
 
-    for attempt in range(1, _MAX_RETRIES + 1):
-        logger.info("LLM naming call — attempt %d/%d", attempt, _MAX_RETRIES)
+    for attempt in range(1, NAMING_MAX_RETRIES + 1):
+        logger.info("LLM naming call — attempt %d/%d", attempt, NAMING_MAX_RETRIES)
         messages = _prompt(meat_dishes, veg_dishes, errors)
 
         try:
             response = client.chat.completions.create(
-                model=_MODEL,
+                model=GROQ_MODEL,
                 messages=messages,
-                temperature=_TEMPERATURE,
+                temperature=NAMING_TEMPERATURE,
                 response_format=response_format,
             )
         except RateLimitError:
             wait = (
-                _RATE_LIMIT_BACKOFF[rl_attempt]
-                if rl_attempt < len(_RATE_LIMIT_BACKOFF)
+                NAMING_RATE_LIMIT_BACKOFF[rl_attempt]
+                if rl_attempt < len(NAMING_RATE_LIMIT_BACKOFF)
                 else None
             )
             if wait is not None:
@@ -207,7 +198,6 @@ def generate(week_start: str, catalogue: Catalogue | None = None) -> WeeklyPlan:
             errors.extend(id_errors)
             continue
 
-        # Re-compose any dish the LLM flagged as incoherent
         invalid: dict[str, list[int]] = {"meat": [], "vegetarian": []}
         for i, named in enumerate(naming.meat):
             if not named.valid:
@@ -219,9 +209,7 @@ def generate(week_start: str, catalogue: Catalogue | None = None) -> WeeklyPlan:
                 invalid["vegetarian"].append(i)
 
         if invalid["meat"] or invalid["vegetarian"]:
-            if attempt == _MAX_RETRIES:
-                # Last attempt — accept whatever we have rather than failing completely.
-                # Flag the offending dishes so the chef knows to review them.
+            if attempt == NAMING_MAX_RETRIES:
                 logger.warning(
                     "Accepting plan with %d flagged dish(es) after %d attempts — "
                     "re-composition exhausted",
@@ -259,8 +247,8 @@ def generate(week_start: str, catalogue: Catalogue | None = None) -> WeeklyPlan:
         logger.info("Valid naming received on attempt %d", attempt)
         return _assemble_plan(week_start, meat_dishes, naming, veg_dishes)
 
-    logger.error("All %d attempts failed. Last response: %.200s", _MAX_RETRIES, last_raw)
+    logger.error("All %d attempts failed. Last response: %.200s", NAMING_MAX_RETRIES, last_raw)
     raise PlannerError(
-        f"Failed to name dishes after {_MAX_RETRIES} attempts. "
+        f"Failed to name dishes after {NAMING_MAX_RETRIES} attempts. "
         f"Last error: {errors[-1] if errors else 'unknown'}"
     )
