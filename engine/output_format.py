@@ -1,5 +1,6 @@
 """
-JSON schema that the LLM must return, validated by Pydantic.
+Format that the Menu has to have.
+In the validation step,at the end of the pipeline, we check that the menu has the correct format.
 """
 
 from datetime import date
