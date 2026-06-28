@@ -103,29 +103,17 @@ def _assemble_plan(
     meat_dishes: list[ComposedDish],
     naming: NamingResponse,
     veg_dishes: list[ComposedDish],
-    flagged: dict[str, list[int]] | None = None,
 ) -> WeeklyPlan:
-    flagged = flagged or {}
-
-    def build_track(dishes: list[ComposedDish], named: list[NamedDish], track: str) -> dict:
-        result = {}
-        for i, day in enumerate(DAYS):
-            dish = dishes[i].to_dish(named[i].dish_name, named[i].description)
-            if i in flagged.get(track, []):
-                dish = dish.model_copy(update={
-                    "needs_review": True,
-                    "chef_note": (
-                        "This dish was flagged as potentially incoherent. "
-                        "Please modify or at least review before serving."
-                    ),
-                })
-            result[day] = dish.model_dump()
-        return result
+    def build_track(dishes: list[ComposedDish], named: list[NamedDish]) -> dict:
+        return {
+            day: dishes[i].to_dish(named[i].dish_name, named[i].description).model_dump()
+            for i, day in enumerate(DAYS)
+        }
 
     return WeeklyPlan.model_validate({
         "week_start": week_start,
-        "meat": build_track(meat_dishes, naming.meat, "meat"),
-        "vegetarian": build_track(veg_dishes, naming.vegetarian, "vegetarian"),
+        "meat": build_track(meat_dishes, naming.meat),
+        "vegetarian": build_track(veg_dishes, naming.vegetarian),
     })
 
 
@@ -216,7 +204,7 @@ def generate(week_start: str, catalogue: Catalogue | None = None) -> WeeklyPlan:
                     len(invalid["meat"]) + len(invalid["vegetarian"]),
                     attempt,
                 )
-                return _assemble_plan(week_start, meat_dishes, naming, veg_dishes, flagged=invalid)
+                return _assemble_plan(week_start, meat_dishes, naming, veg_dishes)
 
             for i in invalid["meat"]:
                 seen = [meat_dishes[j].ingredient_set() for j in range(5) if j != i]

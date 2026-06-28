@@ -57,6 +57,9 @@ class Catalogue:
         n: int = 15,
         exclude_ids: set[int] | None = None,
     ) -> list[Product]:
+        """
+        Given the role and the Track returns a list of products that can be used 
+        """
         if role not in ROLE_GROUPS:
             raise ValueError(f"Unknown role '{role}'. Valid: {sorted(ROLE_GROUPS)}")
         if track not in PROTEIN_ROLE:
@@ -77,6 +80,9 @@ class Catalogue:
         n_per_role: int = 15,
         exclude_ids: set[int] | None = None,
     ) -> WeeklyPools:
+        """
+        Returns a dictionary with all the possible products that we can use for each role for the weekly menu.
+        """
         def _pool(track: str) -> TrackPool:
             roles = [PROTEIN_ROLE[track]] + DISH_ROLES
             return {
@@ -94,19 +100,6 @@ class Catalogue:
             return cast(Product, row)
         except KeyError:
             return None
-
-    def get_cheaper_in_group(
-        self, ingredient_group: str, max_cost: float, track: str
-    ) -> list[Product]:
-        """Return all products in the same ingredient_group costing less than max_cost.
-        Sorted cheapest first. Vegetarian track is filtered to vegan/vegetarian only.
-        """
-        df = self._df[self._df["ingredient_group"] == ingredient_group].copy()
-        if track == "vegetarian":
-            df = df[df["dietary_class"].isin(VEGETARIAN_CLASSES)]
-        df = df[df["cost_per_100g_eur"] < max_cost]
-        df = df.sort_values("cost_per_100g_eur")
-        return cast(list[Product], df[_COLUMNS].to_dict("records"))
 
     def get_products_by_group(
         self,

@@ -180,6 +180,31 @@ products.csv
 
 ---
 
+## Future improvements
+
+**Composer algorithm**
+
+The current composer samples ingredients using cuisine-weighted randomness at the ingredient-group level. Several improvements are possible:
+
+- **Flavour-profile labels per ingredient** — adding a `flavour_profile` attribute (e.g. savoury / sweet / sour / bitter) at the individual product level rather than the group level would let the composer enforce basic culinary coherence before the LLM step. Any labelled dataset found online would be sufficient; this was not the main focus of the project.
+- **Cuisine tags per product** — currently every product inherits the tag of its group. A per-product tag would give the composer finer-grained control over dish coherence.
+
+**Inventory and demand forecasting**
+
+- Once a weekly menu is fixed, the exact quantities of each ingredient needed are known. These could be accumulated over time to build a real consumption history.
+- With a few months of data, forecasting models (e.g. Prophet, ARIMA) could predict how demand varies across the year — higher protein consumption in winter, lighter dishes in summer — and adjust the composer's sampling weights accordingly.
+- Inventory tracking could be added: adjust the purchasing plan based on what is actually left in stock from the previous week rather than starting from zero each time.
+
+**Cost model**
+
+The current budget assumes a fixed cost of ~35 DKK per meal per employee (after tax), keeping raw material cost at roughly 20 EUR per week. This is a simplification — a more rigorous model could account for:
+
+- Labour, energy, and overhead costs on top of raw materials.
+- A **monthly budget constraint** instead of a hard weekly cap, allowing the system to spend more in one week and compensate the following week rather than applying the same ceiling uniformly.
+- Dynamic pricing from actual supplier invoices rather than catalogue estimates.
+
+---
+
 ## Environment variables
 
 | Variable | Required | Description |

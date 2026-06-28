@@ -32,8 +32,6 @@ class TestValidator(unittest.TestCase):
     meat_id: int
     veg_id: int
     carb_id: int
-    meat_cost: float
-    veg_cost: float
 
     @classmethod
     def setUpClass(cls) -> None:

@@ -43,9 +43,11 @@ class ComposedDish:
 
 
     def ingredient_set(self) -> frozenset[int]:
+        """ Set of products in the dish so we can avoid duplicates """
         return frozenset(p["product_id"] for p, _ in self.products)
 
     def to_dish(self, name: str, description: str = "") -> Dish:
+        """ Convert the ComposedDish to a Dish object when we have a name and description from the LLM """
         return Dish(
             dish_name=name,
             description=description,
@@ -57,7 +59,10 @@ class ComposedDish:
 
 
 def _weighted_choice(products: list[Product], target_cuisine: str) -> Product:
-    """Sample one product, giving higher weight to target-cuisine and universal products."""
+    """
+    Assigns a weight to each product based on its cuisine tag.
+    In way that products from the same cuisine are more likely to end up in the dish.
+    """
     weights = []
     for p in products:
         tag = p["cuisine_tag"]
