@@ -197,7 +197,7 @@ The current composer samples ingredients using cuisine-weighted randomness at th
 
 **Cost model**
 
-The current budget assumes a fixed cost of ~35 DKK per meal per employee (after tax), keeping raw material cost at roughly 20 EUR per week. This is a simplification — a more rigorous model could account for:
+The current budget assumes a fixed cost of ~4.7 EUR per meal per employee (after tax), keeping raw material cost at roughly 20 EUR per week. This is a simplification — a more rigorous model could account for:
 
 - Labour, energy, and overhead costs on top of raw materials.
 - A **monthly budget constraint** instead of a hard weekly cap, allowing the system to spend more in one week and compensate the following week rather than applying the same ceiling uniformly.
