@@ -29,7 +29,7 @@ from engine.constants import (
     NAMING_SYSTEM_PROMPT,
     NAMING_TEMPERATURE,
 )
-from engine.llm.schemas import NamedDish, NamingResponse, PlannerError
+from engine.llm.response_format import NamedDish, NamingResponse, PlannerError
 from engine.output_format import WeeklyPlan
 
 load_dotenv(Path(__file__).parent.parent / ".env")

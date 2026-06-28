@@ -13,6 +13,7 @@
     <div class="header-actions">
       <button class="nav-btn" id="prev-btn" onclick="changeWeek(-1)">&#8592;</button>
       <button class="nav-btn" id="next-btn" onclick="changeWeek(1)">&#8594;</button>
+      <input type="date" id="week-jump" oninput="jumpToDate()" title="Jump to any week">
       <button class="generate-btn" id="generate-btn" onclick="generateWeek()">Generate</button>
       <span class="week-label" id="week-label">Week —</span>
     </div>
@@ -62,6 +63,7 @@
         autocomplete="off"
       >
       <select id="modal-select" size="7"></select>
+      <div class="modal-error" id="modal-error"></div>
       <div class="modal-qty-row">
         <label>Quantity</label>
         <input type="number" id="modal-qty" value="100" min="1" step="10">

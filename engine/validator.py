@@ -33,6 +33,11 @@ def _check_track(
 def _check_dish(
     dish: Dish, day: str, track_name: str, catalogue: Catalogue, errors: list[str]
 ) -> None:
+    if len(dish.ingredients) < 2:
+        errors.append(
+            f"{track_name}/{day}/{dish.dish_name}: a dish must have at least 2 ingredients"
+        )
+
     has_meat_protein = False
 
     for ing in dish.ingredients:

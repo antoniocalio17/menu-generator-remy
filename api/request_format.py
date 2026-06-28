@@ -1,5 +1,6 @@
 """
-Pydantic request/response models for the API.
+Define the expected shape of request bodies for specific endpoints
+pydantic models give us type safety and validation
 """
 
 from pydantic import BaseModel

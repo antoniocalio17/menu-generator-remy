@@ -60,6 +60,16 @@ header {
 }
 .nav-btn:hover { background: #f0f0f0; }
 
+#week-jump {
+  padding: 0.3rem 0.5rem;
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: #444;
+  cursor: pointer;
+  background: #fff;
+}
+
 .generate-btn {
   background: #1a73e8;
   color: #fff;
@@ -236,6 +246,7 @@ main {
 }
 .edit-btn:hover { background: #f0f0f0; }
 
+
 /* ── Dish edit (edit mode) ────────────────────────────────────── */
 .dish-edit {
   display: flex;
@@ -304,6 +315,12 @@ main {
   text-align: left;
 }
 .add-ing-btn:hover { border-color: #1a73e8; color: #1a73e8; }
+
+.edit-price-preview {
+  font-size: 0.75rem;
+  color: #555;
+  font-variant-numeric: tabular-nums;
+}
 
 .edit-errors {
   font-size: 0.75rem;
@@ -515,6 +532,12 @@ main {
   border-radius: 5px;
   font-size: 0.82rem;
   padding: 0.2rem;
+}
+
+.modal-error {
+  font-size: 0.78rem;
+  color: #c0392b;
+  min-height: 1em;
 }
 
 .modal-qty-row {

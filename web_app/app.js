@@ -3,8 +3,9 @@ let currentYear = new Date().getFullYear();
 let currentWeek = getISOWeek(new Date());
 let menuData = null;
 let catalogue = [];
+let catalogueMap = new Map();
 
-let modalContext = { track: null, day: null, onSuggest: null };
+let modalContext = { track: null, day: null, onSuggest: null, nameInput: null, descInput: null, onRefresh: null };
 
 // Init
 document.addEventListener('DOMContentLoaded', async () => {
@@ -48,6 +49,7 @@ async function loadCatalogue() {
   const res = await fetch('/api/catalogue');
   const data = await res.json();
   catalogue = data.products;
+  catalogueMap = new Map(catalogue.map(p => [p.product_id, p]));
 }
 
 async function loadWeek(week, year) {
@@ -106,6 +108,11 @@ async function saveDish(track, day) {
 
   errDiv.textContent = '';
 
+  if (ingRows.length < 2) {
+    errDiv.textContent = 'A dish must have at least 2 ingredients.';
+    return;
+  }
+
   const ingredients = Array.from(ingRows).map(row => ({
     product_id: parseInt(row.dataset.productId, 10),
     quantity_g: parseFloat(row.querySelector('.ing-qty').value) || 1,
@@ -155,6 +162,20 @@ function updateHeader(week, year) {
   const range = formatDateRange(year, week);
   document.getElementById('week-label').textContent = `Week ${week}, ${year} · ${range}`;
   document.getElementById('generate-btn').textContent = `Generate Week ${week}`;
+  const mon = isoWeekMonday(year, week);
+  const yyyy = mon.getUTCFullYear();
+  const mm = String(mon.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(mon.getUTCDate()).padStart(2, '0');
+  document.getElementById('week-jump').value = `${yyyy}-${mm}-${dd}`;
+}
+
+function jumpToDate() {
+  const val = document.getElementById('week-jump').value;
+  if (!val) return;
+  const d = new Date(val + 'T00:00:00');
+  currentYear = d.getFullYear();
+  currentWeek = getISOWeek(d);
+  loadWeek(currentWeek, currentYear);
 }
 
 function clearGlobalError() {
@@ -243,7 +264,7 @@ function buildDishCard(track, day, dish) {
   infoBtn.onclick = () => openDetails(dish);
 
   const editBtn = el('button', 'edit-btn', 'Edit');
-  editBtn.onclick = () => switchToEdit(view, editPane);
+  // onclick set below, after editPane and refreshEditPrice are defined
 
   viewActions.appendChild(infoBtn);
   viewActions.appendChild(editBtn);
@@ -277,9 +298,38 @@ function buildDishCard(track, day, dish) {
 
   editPane.appendChild(suggestPanel);
 
+  const editPriceEl = el('div', 'edit-price-preview', '');
+
+  function refreshEditPrice() {
+    const rows = ingEditor.querySelectorAll('.ing-row');
+    let totalCost = 0, totalKcal = 0;
+    for (const row of rows) {
+      const pid = parseInt(row.dataset.productId, 10);
+      const qty = parseFloat(row.querySelector('.ing-qty').value) || 0;
+      const product = catalogueMap.get(pid);
+      if (product) {
+        totalCost += product.cost_per_100g_eur * qty / 100;
+        totalKcal += product.energy_kcal_per_100g * qty / 100;
+      }
+    }
+    editPriceEl.textContent = `Est. ${totalCost.toFixed(2)} EUR · ${Math.round(totalKcal)} kcal`;
+  }
+
+  ingEditor.addEventListener('input', e => {
+    if (e.target.classList.contains('ing-qty')) refreshEditPrice();
+  });
+  const priceObserver = new MutationObserver(refreshEditPrice);
+  priceObserver.observe(ingEditor, { childList: true });
+
+  editBtn.onclick = () => {
+    switchToEdit(view, editPane);
+    refreshEditPrice();
+  };
+
   const addBtn = el('button', 'add-ing-btn', '+ Add ingredient');
-  addBtn.onclick = () => openModal(track, day, ingEditor, onSuggest, nameInput, descInput);
+  addBtn.onclick = () => openModal(track, day, ingEditor, onSuggest, nameInput, descInput, refreshEditPrice);
   editPane.appendChild(addBtn);
+  editPane.appendChild(editPriceEl);
 
   editPane.appendChild(el('div', 'edit-errors'));
 
@@ -498,10 +548,11 @@ function filterModal() {
   });
 }
 
-function openModal(track, day, ingEditor, onSuggest, nameInput, descInput) {
-  modalContext = { track, day, onSuggest: onSuggest || null, nameInput: nameInput || null, descInput: descInput || null };
+function openModal(track, day, ingEditor, onSuggest, nameInput, descInput, onRefresh) {
+  modalContext = { track, day, onSuggest: onSuggest || null, nameInput: nameInput || null, descInput: descInput || null, onRefresh: onRefresh || null };
   activeIngEditor = ingEditor;
   document.getElementById('modal-search').value = '';
+  document.getElementById('modal-error').textContent = '';
   filterModal();
   document.getElementById('modal-qty').value = '100';
   document.getElementById('modal-overlay').classList.remove('hidden');
@@ -510,6 +561,7 @@ function openModal(track, day, ingEditor, onSuggest, nameInput, descInput) {
 
 function closeModal() {
   document.getElementById('modal-overlay').classList.add('hidden');
+  document.getElementById('modal-error').textContent = '';
   activeIngEditor = null;
 }
 
@@ -520,6 +572,15 @@ function confirmAdd() {
   if (!selected) return;
 
   const productId = parseInt(select.value, 10);
+
+  const existing = activeIngEditor.querySelectorAll('.ing-row');
+  for (const row of existing) {
+    if (parseInt(row.dataset.productId, 10) === productId) {
+      document.getElementById('modal-error').textContent = 'This ingredient is already in the dish.';
+      return;
+    }
+  }
+
   const name = selected.dataset.name;
   const qty = parseFloat(document.getElementById('modal-qty').value) || 100;
 

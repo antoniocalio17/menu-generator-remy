@@ -10,17 +10,57 @@ The composer algorithm builds dishes from a real product catalogue using cuisine
 
 **Prerequisites:** Python 3.10+, a [Groq API key](https://console.groq.com).
 
-```bash
-# 1. Create and activate the environment
+Inside `engine/.env`, set:
+```
+GROQ_API_KEY=your_groq_api_key_here
+```
+
+---
+
+### Windows
+
+**Option A — with Conda** *(Conda must already be installed)*
+
+```powershell
 conda create -n heyra_menu python=3.10
 conda activate heyra_menu
-
-# 2. Install dependencies
 pip install -r requirements.txt
+Copy-Item engine\.env.example engine\.env
+notepad engine\.env
+```
 
-# 3. Add your Groq API key
+**Option B — without Conda**
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+Copy-Item engine\.env.example engine\.env
+notepad engine\.env
+```
+
+---
+
+### macOS / Linux
+
+**Option A — with Conda** *(Conda must already be installed)*
+
+```bash
+conda create -n heyra_menu python=3.10
+conda activate heyra_menu
+pip install -r requirements.txt
 cp engine/.env.example engine/.env
-# then edit engine/.env and set GROQ_API_KEY
+nano engine/.env
+```
+
+**Option B — without Conda**
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp engine/.env.example engine/.env
+nano engine/.env
 ```
 
 ---
@@ -30,7 +70,7 @@ cp engine/.env.example engine/.env
 ### Web API + UI
 
 ```bash
-uvicorn api.main:app --reload
+python -m uvicorn api.main:app --reload
 ```
 
 Open `http://localhost:8000` — the chef UI loads automatically.

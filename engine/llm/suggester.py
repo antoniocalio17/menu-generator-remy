@@ -26,7 +26,7 @@ from engine.constants import (
     SUGGEST_SCHEMA,
     SUGGEST_TEMPERATURE,
 )
-from engine.llm.schemas import RenameResponse, SuggestionResponse
+from engine.llm.response_format import RenameResponse, SuggestionResponse
 
 load_dotenv(Path(__file__).parent.parent / ".env")
 

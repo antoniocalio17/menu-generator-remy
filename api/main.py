@@ -9,14 +9,13 @@ import logging
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-
-from api.deps import LOG_DIR, MENUS_DIR, STATIC_DIR, catalogue, menu_path, week_start
+from api.dependencies import LOG_DIR, MENUS_DIR, STATIC_DIR, catalogue, menu_path, week_start
 from api.logging_config import setup_logging
-from api.schemas import DishUpdate, RenameRequest, SuggestRequest
+from api.request_format import DishUpdate, RenameRequest, SuggestRequest
 from engine.exporter import build_summary, summary_to_dict
 from engine.fallback import FallbackError, build_fallback_plan
 from engine.llm.groq_llama import generate
-from engine.llm.schemas import PlannerError
+from engine.llm.response_format import PlannerError
 from engine.llm.suggester import rename_dish, suggest_substitutes
 from engine.output_format import WeeklyPlan
 from engine.validator import PlanValidationError, validate
@@ -26,6 +25,23 @@ logger = logging.getLogger(__name__)
 logger.info("Heyra Menu Generator started")
 
 app = FastAPI(title="Heyra Menu Generator")
+
+_VALID_TRACKS = {"meat", "vegetarian"}
+_VALID_DAYS = {"monday", "tuesday", "wednesday", "thursday", "friday"}
+
+
+def _check_track(track: str) -> None:
+    if track not in _VALID_TRACKS:
+        raise HTTPException(400, f"Unknown track: '{track}'")
+
+
+def _check_day(day: str) -> None:
+    if day not in _VALID_DAYS:
+        raise HTTPException(400, f"Unknown day: '{day}'")
+
+
+def _ingredients_to_dicts(ingredients: list) -> list[dict]:
+    return [{"product_id": i.product_id, "quantity_g": i.quantity_g} for i in ingredients]
 
 
 @app.post("/api/generate/{year}/{week}")
@@ -83,19 +99,14 @@ def update_dish(year: int, week: int, track: str, day: str, body: DishUpdate) ->
     path = menu_path(year, week)
     if not path.exists():
         raise HTTPException(404, "Menu not generated yet for this week")
-    if track not in {"meat", "vegetarian"}:
-        raise HTTPException(400, f"Unknown track: '{track}'")
-    if day not in {"monday", "tuesday", "wednesday", "thursday", "friday"}:
-        raise HTTPException(400, f"Unknown day: '{day}'")
+    _check_track(track)
+    _check_day(day)
 
     data = json.loads(path.read_text())
     data[track][day] = {
         "dish_name": body.dish_name,
         "description": body.description,
-        "ingredients": [
-            {"product_id": i.product_id, "quantity_g": i.quantity_g}
-            for i in body.ingredients
-        ],
+        "ingredients": _ingredients_to_dicts(body.ingredients),
     }
 
     try:
@@ -116,13 +127,8 @@ def update_dish(year: int, week: int, track: str, day: str, body: DishUpdate) ->
 @app.post("/api/suggest")
 def suggest(body: SuggestRequest) -> dict:
     """Return AI-ranked substitute candidates for one ingredient slot."""
-    if body.track not in {"meat", "vegetarian"}:
-        raise HTTPException(400, f"Unknown track: '{body.track}'")
-
-    ingredients = [
-        {"product_id": i.product_id, "quantity_g": i.quantity_g}
-        for i in body.ingredients
-    ]
+    _check_track(body.track)
+    ingredients = _ingredients_to_dicts(body.ingredients)
 
     try:
         candidates = suggest_substitutes(
@@ -144,13 +150,8 @@ def suggest(body: SuggestRequest) -> dict:
 @app.post("/api/rename-dish")
 def rename(body: RenameRequest) -> dict:
     """Re-generate dish name and description after an ingredient swap."""
-    if body.track not in {"meat", "vegetarian"}:
-        raise HTTPException(400, f"Unknown track: '{body.track}'")
-
-    ingredients = [
-        {"product_id": i.product_id, "quantity_g": i.quantity_g}
-        for i in body.ingredients
-    ]
+    _check_track(body.track)
+    ingredients = _ingredients_to_dicts(body.ingredients)
 
     try:
         result = rename_dish(ingredients, body.track, catalogue)
