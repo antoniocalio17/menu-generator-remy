@@ -9,6 +9,7 @@ import logging
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+
 from api.dependencies import LOG_DIR, MENUS_DIR, STATIC_DIR, catalogue, menu_path, week_start
 from api.logging_config import setup_logging
 from api.request_format import DishUpdate, RenameRequest, SuggestRequest

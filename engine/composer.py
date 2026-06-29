@@ -47,7 +47,7 @@ class ComposedDish:
         return frozenset(p["product_id"] for p, _ in self.products)
 
     def to_dish(self, name: str, description: str = "") -> Dish:
-        """ Convert the ComposedDish to a Dish object when we have a name and description from the LLM """
+        """Convert the ComposedDish to a Dish object with a name and description from the LLM."""
         return Dish(
             dish_name=name,
             description=description,

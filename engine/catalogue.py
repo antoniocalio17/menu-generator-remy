@@ -81,7 +81,8 @@ class Catalogue:
         exclude_ids: set[int] | None = None,
     ) -> WeeklyPools:
         """
-        Returns a dictionary with all the possible products that we can use for each role for the weekly menu.
+        Returns a dictionary with all the possible products that we can use
+        for each role for the weekly menu.
         """
         def _pool(track: str) -> TrackPool:
             roles = [PROTEIN_ROLE[track]] + DISH_ROLES
