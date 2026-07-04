@@ -22,8 +22,8 @@ GROQ_API_KEY=your_groq_api_key_here
 **Option A — with Conda** *(Conda must already be installed)*
 
 ```powershell
-conda create -n heyra_menu python=3.10
-conda activate heyra_menu
+conda create -n remy_menu python=3.10
+conda activate remy_menu
 pip install -r requirements.txt
 Copy-Item engine\.env.example engine\.env
 notepad engine\.env
@@ -46,8 +46,8 @@ notepad engine\.env
 **Option A — with Conda** *(Conda must already be installed)*
 
 ```bash
-conda create -n heyra_menu python=3.10
-conda activate heyra_menu
+conda create -n remy_menu python=3.10
+conda activate remy_menu
 pip install -r requirements.txt
 cp engine/.env.example engine/.env
 nano engine/.env
