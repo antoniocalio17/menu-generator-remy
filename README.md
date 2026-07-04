@@ -1,4 +1,4 @@
-# Heyra Menu Generator
+# Remy Menu Generator
 
 Automated weekly canteen menu planner for two dietary tracks (meat / vegetarian), Monday to Friday.
 
